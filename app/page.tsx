@@ -164,9 +164,13 @@ function SortableItem({ item, onDelete, onUpdate, onPeek, startTime, endTime }: 
 }
 
 export default function Home() {
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+
   const [searchQuery, setSearchQuery] = useState('')
   const [days, setDays] = useState<DayPlan[]>([{ id: 'day-1', title: 'Day 1', items: [], startTime: '09:00' }])
   const [activeDayId, setActiveDayId] = useState('day-1')
+  // ... rest of state
   const [mapCenter, setMapCenter] = useState(defaultCenter)
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null)
   const [loading, setLoading] = useState(false)
@@ -180,6 +184,9 @@ export default function Home() {
   const mapRef = useRef<google.maps.Map | null>(null)
   const directionsServiceRef = useRef<google.maps.DirectionsService | null>(null)
   const posterRef = useRef<HTMLDivElement>(null)
+
+  // 渲染守衛：避免 SSR 期間執行瀏覽器專用邏輯
+  if (!mounted) return null
 
   const activeDay = days.find(d => d.id === activeDayId) || days[0]
   const itinerary = activeDay.items
@@ -397,8 +404,10 @@ export default function Home() {
             
             {showStreetView && streetViewPos && (
               <StreetViewPanorama
-                position={streetViewPos}
-                visible={showStreetView}
+                options={{
+                  position: streetViewPos,
+                  visible: showStreetView,
+                }}
                 onCloseclick={() => setShowStreetView(false)}
               />
             )}
