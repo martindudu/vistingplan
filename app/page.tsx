@@ -119,7 +119,6 @@ function SortableItem({ item, onDelete, onUpdate, onPeek, startTime, endTime }: 
   )
 }
 
-// 將主要內容抽離為 HomeContent
 function HomeContent() {
   const [searchQuery, setSearchQuery] = useState('')
   const [days, setDays] = useState<DayPlan[]>([{ id: 'day-1', title: 'Day 1', items: [], startTime: '09:00' }])
@@ -223,7 +222,7 @@ function HomeContent() {
     }
   }, [travelMode, updateActiveDayItems])
 
-  useEffect(() => { if (itinerary.length >= 2) calculateRoute(itinerary, travelMode) }, [travelMode])
+  useEffect(() => { calculateRoute(itinerary, travelMode) }, [travelMode])
 
   const optimize = async () => {
     if (itinerary.length < 3 || !directionsServiceRef.current || typeof google === 'undefined') return
@@ -266,8 +265,10 @@ function HomeContent() {
     }
   }
 
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''
+
   return (
-    <LoadScript googleMapsApiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''} libraries={['places']}>
+    <LoadScript googleMapsApiKey={apiKey} libraries={['places']}>
       <div className="main-layout">
         <aside className="sidebar">
           <header className="header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -302,6 +303,5 @@ function HomeContent() {
   )
 }
 
-// 終極修復：使用 next/dynamic 徹底禁用 SSR 渲染，確保瀏覽器專用 Hooks 不會引發錯誤
-const DynamicHome = dynamic(() => Promise.resolve(Home), { ssr: false })
+const DynamicHome = dynamic(() => Promise.resolve(HomeContent), { ssr: false })
 export default DynamicHome
