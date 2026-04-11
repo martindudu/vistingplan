@@ -96,7 +96,6 @@ function SortableItem({ item, onDelete, onUpdate }: { item: ItineraryItem, onDel
           <span>{item.address.split(',')[0]}</span>
         </div>
         
-        {/* Notes & Duration Section */}
         <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)', fontWeight: '600' }}>停留:</span>
@@ -104,7 +103,7 @@ function SortableItem({ item, onDelete, onUpdate }: { item: ItineraryItem, onDel
               value={item.stayDuration || 60} 
               onClick={(e) => e.stopPropagation()}
               onChange={(e) => onUpdate(item.id, { stayDuration: parseInt(e.target.value) })}
-              style={{ fontSize: '0.75rem', border: '1px solid var(--border)', borderRadius: '4px', padding: '2px 4px' }}
+              style={{ fontSize: '0.75rem', border: '1px solid var(--border)', borderRadius: '4px', padding: '2px 4px', background: 'transparent', color: '#fff' }}
             >
               <option value={30}>30 分鐘</option>
               <option value={60}>1 小時</option>
@@ -123,7 +122,8 @@ function SortableItem({ item, onDelete, onUpdate }: { item: ItineraryItem, onDel
               width: '100%', 
               fontSize: '0.8rem', 
               border: 'none', 
-              background: '#f9f9f9', 
+              background: 'rgba(255,255,255,0.05)', 
+              color: '#fff',
               borderRadius: '8px', 
               padding: '8px',
               resize: 'none',
@@ -168,11 +168,11 @@ export default function Home() {
   }
 
   const fetchDetails = async (placeId: string): Promise<Partial<ItineraryItem>> => {
-    if (!mapRef.current) return {}
+    if (!mapRef.current || typeof google === 'undefined') return {}
     const service = new google.maps.places.PlacesService(mapRef.current)
     return new Promise((resolve) => {
       service.getDetails({ placeId, fields: ['photos', 'rating', 'user_ratings_total', 'opening_hours'] }, (p, status) => {
-        if (status === google.maps.places.PlacesServiceStatus.OK && p) {
+        if (status === 'OK' && p) {
           resolve({
             photoUrl: p.photos?.[0]?.getUrl({ maxWidth: 200 }),
             rating: p.rating,
@@ -209,7 +209,7 @@ export default function Home() {
   }
 
   const calculateRoute = async (items: ItineraryItem[], mode: string = travelMode) => {
-    if (items.length < 2 || !directionsServiceRef.current) {
+    if (items.length < 2 || !directionsServiceRef.current || typeof google === 'undefined') {
       setDirections(null)
       return
     }
@@ -219,7 +219,7 @@ export default function Home() {
         destination: { lat: items[items.length - 1].lat, lng: items[items.length - 1].lng },
         waypoints: items.slice(1, -1).map(i => ({ location: { lat: i.lat, lng: i.lng }, stopover: true })),
         travelMode: mode as google.maps.TravelMode
-      }, (result, status) => resolve(status === google.maps.DirectionsStatus.OK ? result : null))
+      }, (result, status) => resolve(status === 'OK' ? result : null))
     })
     if (res) {
       setDirections(res)
@@ -238,7 +238,7 @@ export default function Home() {
   }, [travelMode])
 
   const optimize = async () => {
-    if (itinerary.length < 3 || !directionsServiceRef.current) return
+    if (itinerary.length < 3 || !directionsServiceRef.current || typeof google === 'undefined') return
     setLoading(true)
     const res = await new Promise<google.maps.DirectionsResult | null>((resolve) => {
       directionsServiceRef.current!.route({
@@ -247,7 +247,7 @@ export default function Home() {
         waypoints: itinerary.slice(1, -1).map(i => ({ location: { lat: i.lat, lng: i.lng }, stopover: true })),
         travelMode: travelMode as google.maps.TravelMode,
         optimizeWaypoints: true
-      }, (result, status) => resolve(status === google.maps.DirectionsStatus.OK ? result : null))
+      }, (result, status) => resolve(status === 'OK' ? result : null))
     })
     if (res) {
       const order = res.routes[0].waypoint_order
@@ -260,7 +260,6 @@ export default function Home() {
     setLoading(false)
   }
 
-  // --- 壓縮與載入邏輯 ---
   const generateShareLink = () => {
     try {
       const simplifiedDays = days.map(day => ({
@@ -279,12 +278,10 @@ export default function Home() {
       const url = `${window.location.origin}${window.location.pathname}?plan=${encoded}`
       return url
     } catch (e) {
-      console.error('連結生成失敗', e)
       return null
     }
   }
 
-  // 處理網址參數載入
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const planData = params.get('plan')
@@ -307,9 +304,7 @@ export default function Home() {
         setDays(restoredDays)
         setTravelMode(decoded.m || 'DRIVING')
         window.history.replaceState({}, '', window.location.pathname)
-      } catch (e) {
-        console.error('無法解析分享連結', e)
-      }
+      } catch (e) {}
     }
   }, [])
 
@@ -320,16 +315,13 @@ export default function Home() {
       text += `${index + 1}. ${item.name}\n`
       if (item.notes) text += `   📝 備註: ${item.notes}\n`
       if (item.travelTime && index < itinerary.length - 1) {
-        text += `   ⬇️ 交通 (${travelMode === 'DRIVING' ? '開車' : travelMode === 'WALKING' ? '走路' : '大眾運輸'}): ${item.travelTime}\n`
+        text += `   ⬇️ 交通: ${item.travelTime}\n`
       }
       text += `\n`
     })
-    
-    text += `🌐 查看互動行程與導航：\n${shareLink}\n\n`
-    text += `--- 來自 Travel Architect ---`
-    
+    text += `🌐 查看互動行程：\n${shareLink}\n\n--- 來自 Travel Architect ---`
     navigator.clipboard.writeText(text).then(() => {
-      alert('行程摘要與「互動分享連結」已複製！現在可以貼給旅伴了。')
+      alert('行程摘要與分享連結已複製！')
     })
   }
 
@@ -374,26 +366,14 @@ export default function Home() {
             </Autocomplete>
           </div>
 
-          <div className="transport-selector" style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
-            <button 
-              className={`day-tab-btn ${travelMode === google.maps.TravelMode.DRIVING ? 'active' : ''}`}
-              onClick={() => setTravelMode(google.maps.TravelMode.DRIVING)}
-              style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}
-            >
+          <div className="transport-selector">
+            <button className={`day-tab-btn ${travelMode === 'DRIVING' ? 'active' : ''}`} onClick={() => setTravelMode('DRIVING')} style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
               <IconCar /> 開車
             </button>
-            <button 
-              className={`day-tab-btn ${travelMode === google.maps.TravelMode.WALKING ? 'active' : ''}`}
-              onClick={() => setTravelMode(google.maps.TravelMode.WALKING)}
-              style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}
-            >
+            <button className={`day-tab-btn ${travelMode === 'WALKING' ? 'active' : ''}`} onClick={() => setTravelMode('WALKING')} style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
               <IconWalk /> 走路
             </button>
-            <button 
-              className={`day-tab-btn ${travelMode === google.maps.TravelMode.TRANSIT ? 'active' : ''}`}
-              onClick={() => setTravelMode(google.maps.TravelMode.TRANSIT)}
-              style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}
-            >
+            <button className={`day-tab-btn ${travelMode === 'TRANSIT' ? 'active' : ''}`} onClick={() => setTravelMode('TRANSIT')} style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
               <IconTrain /> 大眾運輸
             </button>
           </div>
@@ -413,7 +393,7 @@ export default function Home() {
 
           <div className="itinerary-scroll-area">
             {itinerary.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '40px', color: '#ccc' }}>暫無行程，請從上方搜尋景點</div>
+              <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.3)' }}>暫無行程，請從上方搜尋景點</div>
             ) : (
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
                 <SortableContext items={itinerary.map(i => i.id)} strategy={verticalListSortingStrategy}>
@@ -450,7 +430,9 @@ export default function Home() {
             zoom={12}
             onLoad={(map) => {
               mapRef.current = map
-              directionsServiceRef.current = new google.maps.DirectionsService()
+              if (typeof google !== 'undefined') {
+                directionsServiceRef.current = new google.maps.DirectionsService()
+              }
             }}
             options={{
               disableDefaultUI: true,
@@ -458,81 +440,21 @@ export default function Home() {
                 { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
                 { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] },
                 { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] },
-                {
-                  featureType: "administrative.locality",
-                  elementType: "labels.text.fill",
-                  stylers: [{ color: "#d59563" }],
-                },
-                {
-                  featureType: "poi",
-                  elementType: "labels.text.fill",
-                  stylers: [{ color: "#d59563" }],
-                },
-                {
-                  featureType: "poi.park",
-                  elementType: "geometry",
-                  stylers: [{ color: "#263c3f" }],
-                },
-                {
-                  featureType: "poi.park",
-                  elementType: "labels.text.fill",
-                  stylers: [{ color: "#6b9a76" }],
-                },
-                {
-                  featureType: "road",
-                  elementType: "geometry",
-                  stylers: [{ color: "#38414e" }],
-                },
-                {
-                  featureType: "road",
-                  elementType: "geometry.stroke",
-                  stylers: [{ color: "#212a37" }],
-                },
-                {
-                  featureType: "road",
-                  elementType: "labels.text.fill",
-                  stylers: [{ color: "#9ca5b3" }],
-                },
-                {
-                  featureType: "road.highway",
-                  elementType: "geometry",
-                  stylers: [{ color: "#746855" }],
-                },
-                {
-                  featureType: "road.highway",
-                  elementType: "geometry.stroke",
-                  stylers: [{ color: "#1f2835" }],
-                },
-                {
-                  featureType: "road.highway",
-                  elementType: "labels.text.fill",
-                  stylers: [{ color: "#f3d19c" }],
-                },
-                {
-                  featureType: "transit",
-                  elementType: "geometry",
-                  stylers: [{ color: "#2f3948" }],
-                },
-                {
-                  featureType: "transit.station",
-                  elementType: "labels.text.fill",
-                  stylers: [{ color: "#d59563" }],
-                },
-                {
-                  featureType: "water",
-                  elementType: "geometry",
-                  stylers: [{ color: "#17263c" }],
-                },
-                {
-                  featureType: "water",
-                  elementType: "labels.text.fill",
-                  stylers: [{ color: "#515c6d" }],
-                },
-                {
-                  featureType: "water",
-                  elementType: "labels.text.stroke",
-                  stylers: [{ color: "#17263c" }],
-                },
+                { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "#d59563" }] },
+                { featureType: "poi", elementType: "labels.text.fill", stylers: [{ color: "#d59563" }] },
+                { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#263c3f" }] },
+                { featureType: "poi.park", elementType: "labels.text.fill", stylers: [{ color: "#6b9a76" }] },
+                { featureType: "road", elementType: "geometry", stylers: [{ color: "#38414e" }] },
+                { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#212a37" }] },
+                { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#9ca5b3" }] },
+                { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#746855" }] },
+                { featureType: "road.highway", elementType: "geometry.stroke", stylers: [{ color: "#1f2835" }] },
+                { featureType: "road.highway", elementType: "labels.text.fill", stylers: [{ color: "#f3d19c" }] },
+                { featureType: "transit", elementType: "geometry", stylers: [{ color: "#2f3948" }] },
+                { featureType: "transit.station", elementType: "labels.text.fill", stylers: [{ color: "#d59563" }] },
+                { featureType: "water", elementType: "geometry", stylers: [{ color: "#17263c" }] },
+                { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#515c6d" }] },
+                { featureType: "water", elementType: "labels.text.stroke", stylers: [{ color: "#17263c" }] },
               ]
             }}
           >
