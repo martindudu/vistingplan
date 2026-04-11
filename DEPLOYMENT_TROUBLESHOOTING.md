@@ -1,132 +1,42 @@
-# 🔧 部署問題排查指南
+# 🔧 部署問題排查指南 (Vercel 版)
 
-## 502 錯誤解決方案
+## 常見錯誤解決方案
 
-如果看到 `/favicon.ico` 或其他資源返回 502 錯誤，請檢查以下項目：
+### 1. 頁面顯示 "google is not defined" (構建失敗)
+**原因**：Next.js 在伺服器端預渲染時，Google Maps SDK 尚未載入。
+**解決方案**：
+- 系統已在代碼中加入 `typeof google !== 'undefined'` 檢查。
+- 請確保使用最新的 `app/page.tsx`。
+- 如果是本地開發遇到，請確認 `.env.local` 已正確讀取。
 
-### 1. 檢查環境變數
+### 2. 地圖無法顯示或搜尋無效
+**檢查步驟**：
+- 前往 **Google Cloud Console** 確認以下 API 已啟用：
+  - Maps JavaScript API
+  - Places API
+  - Directions API
+- 檢查 **API Key 限制**：是否已加入您的 Vercel 網域（如 `https://vistingplan.vercel.app/*`）。
+- 檢查 Vercel Dashboard 的 **Environment Variables** 是否拼字正確。
 
-確保在 Zeabur 中已設定以下環境變數：
+### 3. Vercel 部署被 Blocked (Hobby 方案限制)
+**錯誤訊息**：`The Hobby Plan does not support collaboration for private repositories.`
+**解決方案**：
+- 將 GitHub 倉庫設為 **Public (公開)**。
+- 或是確保 Git 的作者 Email 與您的 Vercel 帳號 Email 完全一致。
 
-```
-NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=你的_API_Key
-```
-
-**檢查步驟：**
-- 登入 Zeabur
-- 進入你的專案
-- 點擊「Environment Variables」
-- 確認 `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` 已設定
-
-### 2. 檢查構建日誌
-
-在 Zeabur 中查看構建日誌，確認：
-- ✅ 構建成功完成
-- ✅ 沒有 TypeScript 錯誤
-- ✅ 所有依賴都正確安裝
-
-**檢查步驟：**
-- 在 Zeabur 專案頁面
-- 點擊「Deployments」
-- 查看最新的部署日誌
-
-### 3. 檢查 API Key 限制
-
-確保 Google Maps API Key 已正確設定限制：
-
-**HTTP referrers 限制應包含：**
-```
-http://localhost:3000/*
-https://vistingplan2026.zeabur.app/*
-```
-
-**API 限制應只啟用：**
-- Maps JavaScript API
-- Geocoding API
-- Directions API
-
-### 4. 常見錯誤訊息
-
-#### "Cannot find module '@dnd-kit/core'"
-**解決方案：** 確保 `package.json` 中包含所有必要的依賴
-
-#### "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is not defined"
-**解決方案：** 在 Zeabur 環境變數中設定 API Key
-
-#### "Property 'name' does not exist on type 'GeocoderResult'"
-**解決方案：** 已修正，確保使用最新版本的代碼
-
-### 5. 重新部署
-
-如果問題持續存在：
-
-1. **清除構建快取**
-   - 在 Zeabur 專案設定中
-   - 找到「Clear Build Cache」選項
-   - 清除後重新部署
-
-2. **檢查 Node.js 版本**
-   - Zeabur 通常會自動偵測
-   - 如果需要，可在 `package.json` 中指定：
-     ```json
-     "engines": {
-       "node": ">=18.0.0"
-     }
-     ```
-
-### 6. 本地測試
-
-在推送到 GitHub 之前，先在本地測試：
-
-```bash
-# 安裝依賴
-npm install
-
-# 建立 .env.local 檔案
-echo "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=你的_API_Key" > .env.local
-
-# 測試構建
-npm run build
-
-# 啟動生產模式
-npm start
-```
-
-如果本地構建成功，但 Zeabur 部署失敗，可能是環境變數或構建配置問題。
-
-### 7. 檢查瀏覽器主控台
-
-502 錯誤可能伴隨其他錯誤：
-
-- **API Key 相關錯誤**：檢查 API Key 是否正確設定
-- **CORS 錯誤**：檢查 HTTP referrer 限制
-- **模組載入錯誤**：檢查構建是否成功
-
-### 8. 聯繫支援
-
-如果以上步驟都無法解決問題：
-
-1. 檢查 Zeabur 的狀態頁面
-2. 查看 Zeabur 的官方文件
-3. 聯繫 Zeabur 支援團隊
+### 4. 圖片無法匯出或海報下載失敗
+**解決方案**：
+- 本系統使用 `html2canvas` 進行截圖。
+- 由於跨網域圖片限制 (CORS)，如果景點照片無法顯示在海報中，請確認 Google Cloud 的 API 金鑰權限是否允許當前網域存取媒體資源。
 
 ## ✅ 正常運行的標誌
+- ✅ 背景顯示沉浸式風景圖。
+- ✅ 搜尋景點時會出現自動完成建議。
+- ✅ 景點卡片顯示氣溫與天氣圖示。
+- ✅ 點擊眼睛圖示可顯示 360 度街景。
 
-應用程式正常運行時，你應該看到：
-
-- ✅ 沒有 502 錯誤
-- ✅ 地圖正常顯示
-- ✅ 可以搜尋景點
-- ✅ 可以加入行程
-- ✅ 可以拖曳排序
-
-## 📝 檢查清單
-
-部署前確認：
-
-- [ ] `package.json` 包含所有依賴
-- [ ] 環境變數已設定
-- [ ] API Key 限制已正確設定
-- [ ] 本地構建成功
-- [ ] 代碼已推送到 GitHub
-- [ ] Zeabur 部署狀態為「成功」
+## 📝 部署檢查清單
+- [ ] Vercel 環境變數已設定 `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`。
+- [ ] Google Cloud 已啟用 **Places API** (非常重要！)。
+- [ ] GitHub 倉庫已推送最新代碼。
+- [ ] 地圖已設定正確的網站存取限制。
