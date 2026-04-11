@@ -30,7 +30,7 @@ html, body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* 現代動態背景 */
+/* 沉浸式旅遊背景圖 */
 body::before {
   content: "";
   position: fixed;
@@ -38,14 +38,15 @@ body::before {
   left: 0;
   width: 100%;
   height: 100%;
-  background: 
-    radial-gradient(circle at 20% 20%, rgba(59, 130, 246, 0.15) 0%, transparent 40%),
-    radial-gradient(circle at 80% 80%, rgba(139, 92, 246, 0.15) 0%, transparent 40%),
-    radial-gradient(circle at 50% 50%, rgba(10, 10, 12, 1) 0%, #000 100%);
+  background-image: url("https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?q=80&w=2021&auto=format&fit=crop");
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  filter: brightness(0.4) saturate(0.8); /* 壓暗並降低飽和度以契合暗色 UI */
   z-index: -1;
 }
 
-/* 雜訊紋理層 */
+/* 額外的漸層遮罩，確保側邊欄文字可讀性 */
 body::after {
   content: "";
   position: fixed;
@@ -53,10 +54,9 @@ body::after {
   left: 0;
   width: 100%;
   height: 100%;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3%3Ffilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
-  opacity: 0.03;
+  background: linear-gradient(to right, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.2) 100%);
+  z-index: -1;
   pointer-events: none;
-  z-index: 1000;
 }
 
 .main-layout {
