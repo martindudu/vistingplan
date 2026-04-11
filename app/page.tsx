@@ -151,7 +151,7 @@ export default function Home() {
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [autocomplete, setAutocomplete] = useState<google.maps.places.Autocomplete | null>(null)
-  const [travelMode, setTravelMode] = useState<google.maps.TravelMode>(google.maps.TravelMode.DRIVING)
+  const [travelMode, setTravelMode] = useState<string>('DRIVING')
   const mapRef = useRef<google.maps.Map | null>(null)
   const directionsServiceRef = useRef<google.maps.DirectionsService | null>(null)
 
@@ -172,7 +172,7 @@ export default function Home() {
     const service = new google.maps.places.PlacesService(mapRef.current)
     return new Promise((resolve) => {
       service.getDetails({ placeId, fields: ['photos', 'rating', 'user_ratings_total', 'opening_hours'] }, (p, status) => {
-        if (status === 'OK' && p) {
+        if (status === google.maps.places.PlacesServiceStatus.OK && p) {
           resolve({
             photoUrl: p.photos?.[0]?.getUrl({ maxWidth: 200 }),
             rating: p.rating,
@@ -208,7 +208,7 @@ export default function Home() {
     }
   }
 
-  const calculateRoute = async (items: ItineraryItem[], mode: google.maps.TravelMode = travelMode) => {
+  const calculateRoute = async (items: ItineraryItem[], mode: string = travelMode) => {
     if (items.length < 2 || !directionsServiceRef.current) {
       setDirections(null)
       return
@@ -218,8 +218,8 @@ export default function Home() {
         origin: { lat: items[0].lat, lng: items[0].lng },
         destination: { lat: items[items.length - 1].lat, lng: items[items.length - 1].lng },
         waypoints: items.slice(1, -1).map(i => ({ location: { lat: i.lat, lng: i.lng }, stopover: true })),
-        travelMode: mode
-      }, (result, status) => resolve(status === 'OK' ? result : null))
+        travelMode: mode as google.maps.TravelMode
+      }, (result, status) => resolve(status === google.maps.DirectionsStatus.OK ? result : null))
     })
     if (res) {
       setDirections(res)
@@ -238,16 +238,16 @@ export default function Home() {
   }, [travelMode])
 
   const optimize = async () => {
-    if (itinerary.length < 3) return
+    if (itinerary.length < 3 || !directionsServiceRef.current) return
     setLoading(true)
     const res = await new Promise<google.maps.DirectionsResult | null>((resolve) => {
       directionsServiceRef.current!.route({
         origin: { lat: itinerary[0].lat, lng: itinerary[0].lng },
         destination: { lat: itinerary[itinerary.length - 1].lat, lng: itinerary[itinerary.length - 1].lng },
         waypoints: itinerary.slice(1, -1).map(i => ({ location: { lat: i.lat, lng: i.lng }, stopover: true })),
-        travelMode: travelMode,
+        travelMode: travelMode as google.maps.TravelMode,
         optimizeWaypoints: true
-      }, (result, status) => resolve(status === 'OK' ? result : null))
+      }, (result, status) => resolve(status === google.maps.DirectionsStatus.OK ? result : null))
     })
     if (res) {
       const order = res.routes[0].waypoint_order
@@ -263,11 +263,10 @@ export default function Home() {
   // --- 壓縮與載入邏輯 ---
   const generateShareLink = () => {
     try {
-      // 僅提取必要資訊以縮短 URL 長度
       const simplifiedDays = days.map(day => ({
         t: day.title,
         i: day.items.map(item => ({
-          p: item.id, // Place ID
+          p: item.id,
           n: item.name,
           a: item.address,
           lt: item.lat,
@@ -306,8 +305,7 @@ export default function Home() {
           }))
         }))
         setDays(restoredDays)
-        setTravelMode(decoded.m || google.maps.TravelMode.DRIVING)
-        // 移除網址參數保持整潔
+        setTravelMode(decoded.m || 'DRIVING')
         window.history.replaceState({}, '', window.location.pathname)
       } catch (e) {
         console.error('無法解析分享連結', e)
