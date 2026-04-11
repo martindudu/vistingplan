@@ -71,6 +71,9 @@ const IconTrain = () => (
 const IconShare = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg>
 )
+const IconSparkles = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path><path d="M5 3v4"></path><path d="M19 17v4"></path><path d="M3 5h4"></path><path d="M17 19h4"></path></svg>
+)
 
 function SortableItem({ item, onDelete, onUpdate }: { item: ItineraryItem, onDelete: (id: string) => void, onUpdate: (id: string, updates: Partial<ItineraryItem>) => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id })
@@ -151,6 +154,9 @@ export default function Home() {
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [autocomplete, setAutocomplete] = useState<google.maps.places.Autocomplete | null>(null)
+  const [discoveryResults, setDiscoveryResults] = useState<ItineraryItem[]>([])
+  const [discoveryCategory, setDiscoveryCategory] = useState<string>('tourist_attraction')
+  const [discoveryLoading, setDiscoveryLoading] = useState(false)
   const [travelMode, setTravelMode] = useState<string>('DRIVING')
   const mapRef = useRef<google.maps.Map | null>(null)
   const directionsServiceRef = useRef<google.maps.DirectionsService | null>(null)
@@ -183,6 +189,44 @@ export default function Home() {
     })
   }
 
+  const searchNearby = async (location?: { lat: number, lng: number }) => {
+    if (typeof google === 'undefined' || !mapRef.current) return
+    setDiscoveryLoading(true)
+    const service = new google.maps.places.PlacesService(mapRef.current)
+    let center = location
+    if (!center) {
+      if (itinerary.length > 0) {
+        center = { lat: itinerary[itinerary.length - 1].lat, lng: itinerary[itinerary.length - 1].lng }
+      } else {
+        center = defaultCenter
+      }
+    }
+    const request: google.maps.places.PlaceSearchRequest = {
+      location: center,
+      radius: 3000,
+      type: discoveryCategory as any
+    }
+    service.nearbySearch(request, (results, status) => {
+      if (status === 'OK' && results) {
+        setDiscoveryResults(results.slice(0, 10).map(r => ({
+          id: r.place_id || Date.now().toString(),
+          name: r.name || '',
+          address: r.vicinity || '',
+          lat: r.geometry?.location?.lat() || 0,
+          lng: r.geometry?.location?.lng() || 0,
+          rating: r.rating,
+          photoUrl: r.photos?.[0]?.getUrl({ maxWidth: 200 }),
+          stayDuration: 60
+        })))
+      }
+      setDiscoveryLoading(false)
+    })
+  }
+
+  useEffect(() => {
+    if (itinerary.length > 0 || discoveryResults.length > 0) searchNearby()
+  }, [discoveryCategory])
+
   const onPlaceChanged = async () => {
     if (autocomplete) {
       const place = autocomplete.getPlace()
@@ -198,12 +242,12 @@ export default function Home() {
           stayDuration: 60,
           ...details
         }
-        const newItinerary = [...itinerary, newItem]
-        updateActiveDayItems(newItinerary)
+        updateActiveDayItems([...itinerary, newItem])
         setMapCenter({ lat: newItem.lat, lng: newItem.lng })
-        calculateRoute(newItinerary, travelMode)
+        calculateRoute([...itinerary, newItem], travelMode)
         setSearchQuery('')
         setLoading(false)
+        searchNearby({ lat: newItem.lat, lng: newItem.lng })
       }
     }
   }
@@ -224,17 +268,13 @@ export default function Home() {
     if (res) {
       setDirections(res)
       const updatedItems = [...items]
-      res.routes[0].legs.forEach((leg, i) => {
-        if (updatedItems[i]) updatedItems[i].travelTime = leg.duration?.text
-      })
+      res.routes[0].legs.forEach((leg, i) => { if (updatedItems[i]) updatedItems[i].travelTime = leg.duration?.text })
       updateActiveDayItems(updatedItems)
     }
   }
 
   useEffect(() => {
-    if (itinerary.length >= 2) {
-      calculateRoute(itinerary, travelMode)
-    }
+    if (itinerary.length >= 2) calculateRoute(itinerary, travelMode)
   }, [travelMode])
 
   const optimize = async () => {
@@ -262,24 +302,10 @@ export default function Home() {
 
   const generateShareLink = () => {
     try {
-      const simplifiedDays = days.map(day => ({
-        t: day.title,
-        i: day.items.map(item => ({
-          p: item.id,
-          n: item.name,
-          a: item.address,
-          lt: item.lat,
-          lg: item.lng,
-          no: item.notes || '',
-          sd: item.stayDuration || 60
-        }))
-      }))
-      const encoded = btoa(encodeURIComponent(JSON.stringify({ d: simplifiedDays, m: travelMode })))
-      const url = `${window.location.origin}${window.location.pathname}?plan=${encoded}`
-      return url
-    } catch (e) {
-      return null
-    }
+      const simplified = days.map(d => ({ t: d.title, i: d.items.map(item => ({ p: item.id, n: item.name, a: item.address, lt: item.lat, lg: item.lng, no: item.notes, sd: item.stayDuration })) }))
+      const encoded = btoa(encodeURIComponent(JSON.stringify({ d: simplified, m: travelMode })))
+      return `${window.location.origin}${window.location.pathname}?plan=${encoded}`
+    } catch (e) { return null }
   }
 
   useEffect(() => {
@@ -288,49 +314,18 @@ export default function Home() {
     if (planData) {
       try {
         const decoded = JSON.parse(decodeURIComponent(atob(planData)))
-        const restoredDays: DayPlan[] = decoded.d.map((day: any, index: number) => ({
-          id: `day-${index + 1}`,
-          title: day.t,
-          items: day.i.map((item: any) => ({
-            id: item.p,
-            name: item.n,
-            address: item.a,
-            lat: item.lt,
-            lng: item.lg,
-            notes: item.no,
-            stayDuration: item.sd
-          }))
-        }))
-        setDays(restoredDays)
+        setDays(decoded.d.map((day: any, idx: number) => ({ id: `day-${idx + 1}`, title: day.t, items: day.i.map((item: any) => ({ id: item.p, name: item.n, address: item.a, lat: item.lt, lng: item.lg, notes: item.no, stayDuration: item.sd })) })))
         setTravelMode(decoded.m || 'DRIVING')
         window.history.replaceState({}, '', window.location.pathname)
       } catch (e) {}
     }
   }, [])
 
-  const exportToText = () => {
-    const shareLink = generateShareLink()
-    let text = `📍 ${activeDay.title} 旅遊行程規劃\n\n`
-    itinerary.forEach((item, index) => {
-      text += `${index + 1}. ${item.name}\n`
-      if (item.notes) text += `   📝 備註: ${item.notes}\n`
-      if (item.travelTime && index < itinerary.length - 1) {
-        text += `   ⬇️ 交通: ${item.travelTime}\n`
-      }
-      text += `\n`
-    })
-    text += `🌐 查看互動行程：\n${shareLink}\n\n--- 來自 Travel Architect ---`
-    navigator.clipboard.writeText(text).then(() => {
-      alert('行程摘要與分享連結已複製！')
-    })
-  }
-
   const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }))
   const onDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
     if (over && active.id !== over.id) {
-      const oldIdx = itinerary.findIndex(i => i.id === active.id)
-      const newIdx = itinerary.findIndex(i => i.id === over.id)
+      const oldIdx = itinerary.findIndex(i => i.id === active.id), newIdx = itinerary.findIndex(i => i.id === over.id)
       const newItems = arrayMove(itinerary, oldIdx, newIdx)
       updateActiveDayItems(newItems)
       calculateRoute(newItems)
@@ -339,25 +334,17 @@ export default function Home() {
 
   const startNav = () => {
     if (itinerary.length === 0) return
-    const wp = itinerary.slice(0, -1).map(i => encodeURIComponent(i.address)).join('|')
-    const dest = encodeURIComponent(itinerary[itinerary.length - 1].address)
+    const wp = itinerary.slice(0, -1).map(i => encodeURIComponent(i.address)).join('|'), dest = encodeURIComponent(itinerary[itinerary.length - 1].address)
     window.open(`https://www.google.com/maps/dir/?api=1&waypoints=${wp}&destination=${dest}`, '_blank')
   }
 
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''
-
   return (
-    <LoadScript googleMapsApiKey={apiKey} libraries={['places']}>
+    <LoadScript googleMapsApiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''} libraries={['places']}>
       <div className="main-layout">
         <aside className="sidebar">
           <header className="header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div>
-              <h1>Travel <br />Architect</h1>
-              <p>您的專屬旅遊建築師。規劃完美旅程。</p>
-            </div>
-            <button className="btn-outline" onClick={exportToText} style={{ padding: '8px 12px', borderRadius: '8px' }}>
-              <IconShare />
-            </button>
+            <div><h1>Travel <br />Architect</h1><p>您的專屬旅遊建築師。</p></div>
+            <button className="btn-outline" onClick={() => { const link = generateShareLink(); if (link) { navigator.clipboard.writeText(link); alert('分享連結已複製！'); } }}><IconShare /></button>
           </header>
 
           <div className="search-container">
@@ -367,96 +354,69 @@ export default function Home() {
           </div>
 
           <div className="transport-selector">
-            <button className={`day-tab-btn ${travelMode === 'DRIVING' ? 'active' : ''}`} onClick={() => setTravelMode('DRIVING')} style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
-              <IconCar /> 開車
-            </button>
-            <button className={`day-tab-btn ${travelMode === 'WALKING' ? 'active' : ''}`} onClick={() => setTravelMode('WALKING')} style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
-              <IconWalk /> 走路
-            </button>
-            <button className={`day-tab-btn ${travelMode === 'TRANSIT' ? 'active' : ''}`} onClick={() => setTravelMode('TRANSIT')} style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
-              <IconTrain /> 大眾運輸
-            </button>
+            <button className={`day-tab-btn ${travelMode === 'DRIVING' ? 'active' : ''}`} onClick={() => setTravelMode('DRIVING')}><IconCar /> 開車</button>
+            <button className={`day-tab-btn ${travelMode === 'WALKING' ? 'active' : ''}`} onClick={() => setTravelMode('WALKING')}><IconWalk /> 走路</button>
+            <button className={`day-tab-btn ${travelMode === 'TRANSIT' ? 'active' : ''}`} onClick={() => setTravelMode('TRANSIT')}><IconTrain /> 大眾運輸</button>
+          </div>
+
+          {/* 探索周邊 Discovery Section */}
+          <div className="discovery-section" style={{ marginBottom: '32px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', color: 'var(--accent)' }}>
+              <IconSparkles /> <h2 style={{ fontSize: '1rem', fontWeight: '800', textTransform: 'uppercase' }}>探索周邊</h2>
+            </div>
+            <div style={{ display: 'flex', gap: '4px', marginBottom: '16px' }}>
+              <button className={`day-tab-btn ${discoveryCategory === 'tourist_attraction' ? 'active' : ''}`} onClick={() => setDiscoveryCategory('tourist_attraction')} style={{ fontSize: '0.7rem' }}>景點</button>
+              <button className={`day-tab-btn ${discoveryCategory === 'restaurant' ? 'active' : ''}`} onClick={() => setDiscoveryCategory('restaurant')} style={{ fontSize: '0.7rem' }}>美食</button>
+              <button className={`day-tab-btn ${discoveryCategory === 'lodging' ? 'active' : ''}`} onClick={() => setDiscoveryCategory('lodging')} style={{ fontSize: '0.7rem' }}>住宿</button>
+            </div>
+            <div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '8px', scrollbarWidth: 'none' }}>
+              {discoveryLoading ? <div style={{ color: 'var(--text-dim)', fontSize: '0.8rem' }}>探索中...</div> : 
+                discoveryResults.map(res => (
+                  <div key={res.id} onClick={async () => {
+                    setLoading(true)
+                    const details = await fetchDetails(res.id)
+                    const updated = [...itinerary, { ...res, ...details }]
+                    updateActiveDayItems(updated)
+                    calculateRoute(updated)
+                    setLoading(false)
+                  }} style={{ width: '120px', flexShrink: 0, cursor: 'pointer' }}>
+                    <div style={{ width: '120px', height: '80px', borderRadius: '12px', overflow: 'hidden', marginBottom: '8px', background: 'var(--glass-surface)', border: '1px solid var(--glass-border)' }}>
+                      {res.photoUrl ? <img src={res.photoUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', color: 'var(--text-dim)' }}>無照片</div>}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{res.name}</div>
+                    <div style={{ fontSize: '0.65rem', color: '#f59e0b' }}>★ {res.rating || 'N/A'}</div>
+                  </div>
+                ))
+              }
+            </div>
           </div>
 
           <div className="day-tabs">
-            {days.map(d => (
-              <button key={d.id} className={`day-tab-btn ${activeDayId === d.id ? 'active' : ''}`} onClick={() => setActiveDayId(d.id)}>
-                {d.title}
-              </button>
-            ))}
-            <button className="day-tab-btn" onClick={() => {
-              const newId = `day-${days.length + 1}`
-              setDays([...days, { id: newId, title: `Day ${days.length + 1}`, items: [] }])
-              setActiveDayId(newId)
-            }}>+ Add</button>
+            {days.map(d => (<button key={d.id} className={`day-tab-btn ${activeDayId === d.id ? 'active' : ''}`} onClick={() => setActiveDayId(d.id)}>{d.title}</button>))}
+            <button className="day-tab-btn" onClick={() => { const newId = `day-${days.length + 1}`; setDays([...days, { id: newId, title: `Day ${days.length + 1}`, items: [] }]); setActiveDayId(newId); }}>+ Add</button>
           </div>
 
           <div className="itinerary-scroll-area">
-            {itinerary.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.3)' }}>暫無行程，請從上方搜尋景點</div>
-            ) : (
+            {itinerary.length === 0 ? <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.3)' }}>暫無行程</div> : (
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
                 <SortableContext items={itinerary.map(i => i.id)} strategy={verticalListSortingStrategy}>
-                  {itinerary.map(item => (
-                    <SortableItem key={item.id} item={item} onUpdate={handleUpdateItem} onDelete={(id) => {
-                      const updated = itinerary.filter(i => i.id !== id)
-                      updateActiveDayItems(updated)
-                      calculateRoute(updated)
-                    }} />
-                  ))}
+                  {itinerary.map(item => (<SortableItem key={item.id} item={item} onUpdate={handleUpdateItem} onDelete={(id) => { const updated = itinerary.filter(i => i.id !== id); updateActiveDayItems(updated); calculateRoute(updated); }} />))}
                 </SortableContext>
               </DndContext>
             )}
           </div>
 
           <div className="action-bar">
-            {itinerary.length >= 3 && (
-              <button className="btn-outline" onClick={optimize} disabled={loading} style={{ flex: 1 }}>
-                <IconMagic /> {loading ? '優化中...' : '智慧排序'}
-              </button>
-            )}
-            {itinerary.length > 0 && (
-              <button className="btn-primary" onClick={startNav} style={{ flex: 2 }}>
-                <IconNavigation /> 開始導航
-              </button>
-            )}
+            {itinerary.length >= 3 && <button className="btn-outline" onClick={optimize} disabled={loading} style={{ flex: 1 }}><IconMagic />智慧排序</button>}
+            {itinerary.length > 0 && <button className="btn-primary" onClick={startNav} style={{ flex: 2 }}><IconNavigation /> 開始導航</button>}
           </div>
         </aside>
 
         <section className="map-viewport">
           <GoogleMap
-            mapContainerStyle={{ width: '100%', height: '100%' }}
-            center={mapCenter}
-            zoom={12}
-            onLoad={(map) => {
-              mapRef.current = map
-              if (typeof google !== 'undefined') {
-                directionsServiceRef.current = new google.maps.DirectionsService()
-              }
-            }}
-            options={{
-              disableDefaultUI: true,
-              styles: [
-                { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
-                { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] },
-                { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] },
-                { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "#d59563" }] },
-                { featureType: "poi", elementType: "labels.text.fill", stylers: [{ color: "#d59563" }] },
-                { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#263c3f" }] },
-                { featureType: "poi.park", elementType: "labels.text.fill", stylers: [{ color: "#6b9a76" }] },
-                { featureType: "road", elementType: "geometry", stylers: [{ color: "#38414e" }] },
-                { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#212a37" }] },
-                { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#9ca5b3" }] },
-                { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#746855" }] },
-                { featureType: "road.highway", elementType: "geometry.stroke", stylers: [{ color: "#1f2835" }] },
-                { featureType: "road.highway", elementType: "labels.text.fill", stylers: [{ color: "#f3d19c" }] },
-                { featureType: "transit", elementType: "geometry", stylers: [{ color: "#2f3948" }] },
-                { featureType: "transit.station", elementType: "labels.text.fill", stylers: [{ color: "#d59563" }] },
-                { featureType: "water", elementType: "geometry", stylers: [{ color: "#17263c" }] },
-                { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#515c6d" }] },
-                { featureType: "water", elementType: "labels.text.stroke", stylers: [{ color: "#17263c" }] },
-              ]
-            }}
+            mapContainerStyle={{ width: '100%', height: '100%' }} center={mapCenter} zoom={12}
+            onLoad={(map) => { mapRef.current = map; if (typeof google !== 'undefined') directionsServiceRef.current = new google.maps.DirectionsService(); }}
+            options={{ disableDefaultUI: true, styles: [{ elementType: "geometry", stylers: [{ color: "#242f3e" }] }, { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] }, { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] }, { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "#d59563" }] }, { featureType: "poi", elementType: "labels.text.fill", stylers: [{ color: "#d59563" }] }, { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#263c3f" }] }, { featureType: "poi.park", elementType: "labels.text.fill", stylers: [{ color: "#6b9a76" }] }, { featureType: "road", elementType: "geometry", stylers: [{ color: "#38414e" }] }, { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#212a37" }] }, { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#9ca5b3" }] }, { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#746855" }] }, { featureType: "road.highway", elementType: "geometry.stroke", stylers: [{ color: "#1f2835" }] }, { featureType: "road.highway", elementType: "labels.text.fill", stylers: [{ color: "#f3d19c" }] }, { featureType: "transit", elementType: "geometry", stylers: [{ color: "#2f3948" }] }, { featureType: "transit.station", elementType: "labels.text.fill", stylers: [{ color: "#d59563" }] }, { featureType: "water", elementType: "geometry", stylers: [{ color: "#17263c" }] }, { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#515c6d" }] }, { featureType: "water", elementType: "labels.text.stroke", stylers: [{ color: "#17263c" }] }] }}
           >
             {itinerary.map(p => <Marker key={p.id} position={{ lat: p.lat, lng: p.lng }} label={{ text: p.name, className: 'map-label' }} />)}
             {directions && <DirectionsRenderer directions={directions} options={{ suppressMarkers: true }} />}
