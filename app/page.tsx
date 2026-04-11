@@ -81,6 +81,10 @@ const IconDrag = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="5" r="1"></circle><circle cx="9" cy="12" r="1"></circle><circle cx="9" cy="19" r="1"></circle><circle cx="15" cy="5" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="15" cy="19" r="1"></circle></svg>
 )
 
+const IconHelp = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+)
+
 function SortableItem({ item, index, onDelete, getGoogleMapsUrl, onStartNavigation, isLast }: SortableItemProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id })
 
@@ -115,7 +119,9 @@ function SortableItem({ item, index, onDelete, getGoogleMapsUrl, onStartNavigati
             )}
           </div>
           <button className="delete-button" onClick={() => onDelete(item.id)}>
-            <IconTrash />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <IconTrash /> 移除
+            </div>
           </button>
         </div>
         
@@ -127,14 +133,14 @@ function SortableItem({ item, index, onDelete, getGoogleMapsUrl, onStartNavigati
 
         {item.openingHours && (
           <div className="item-hours" style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginBottom: '12px' }}>
-            <div style={{ fontWeight: '600', marginBottom: '2px' }}>Opening Hours (Today):</div>
-            <div>{item.openingHours[new Date().getDay() === 0 ? 6 : (new Date().getDay() - 1)] || 'N/A'}</div>
+            <div style={{ fontWeight: '600', marginBottom: '2px' }}>今日營業時間：</div>
+            <div>{item.openingHours[new Date().getDay() === 0 ? 6 : (new Date().getDay() - 1)] || '未提供'}</div>
           </div>
         )}
 
         {item.travelTime && (
           <div className="travel-time" style={{ marginTop: '0', border: 'none', background: '#f1f5f9', padding: '8px 12px', borderRadius: '4px' }}>
-            <IconClock /> {item.travelTime}
+            <IconClock /> 下一站：{item.travelTime.replace('Next Stop: ', '')}
           </div>
         )}
       </div>
@@ -146,7 +152,7 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState('')
   const [places, setPlaces] = useState<Place[]>([])
   const [days, setDays] = useState<DayPlan[]>([
-    { id: 'day-1', title: 'Day 1', items: [] }
+    { id: 'day-1', title: '第 1 天', items: [] }
   ])
   const [activeDayId, setActiveDayId] = useState('day-1')
   const [selectedPlaces, setSelectedPlaces] = useState<Place[]>([])
@@ -156,6 +162,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null)
   const [isBatchMode, setIsBatchMode] = useState(false)
   const [autocomplete, setAutocomplete] = useState<google.maps.places.Autocomplete | null>(null)
+  const [showGuide, setShowGuide] = useState(false)
   const mapRef = useRef<google.maps.Map | null>(null)
   const directionsServiceRef = useRef<google.maps.DirectionsService | null>(null)
 
@@ -259,9 +266,9 @@ export default function Home() {
           )
         })
         const duration = result.routes[0].legs[0].duration?.text || '無法計算'
-        updatedItems[i].travelTime = `Next Stop: ${duration}`
+        updatedItems[i].travelTime = duration
       } catch (err) {
-        updatedItems[i].travelTime = 'N/A'
+        updatedItems[i].travelTime = undefined
       }
     }
     setItinerary(updatedItems)
@@ -349,7 +356,7 @@ export default function Home() {
           const avgLng = foundPlaces.reduce((sum, p) => sum + p.lng, 0) / foundPlaces.length
           setMapCenter({ lat: avgLat, lng: avgLng })
         } else {
-          setError('找不到景點')
+          setError('找不到任何景點')
         }
       } else {
         const place = await geocodePlace(queries[0])
@@ -361,7 +368,7 @@ export default function Home() {
       }
       setSearchQuery('')
     } catch (err) {
-      setError('搜尋失敗')
+      setError('搜尋失敗，請稍後再試')
     } finally {
       setLoading(false)
     }
@@ -369,7 +376,7 @@ export default function Home() {
 
   const addToItinerary = async (place: Place) => {
     if (itinerary.some(item => item.id === place.id)) {
-      setError('該景點已在行程中')
+      setError('該景點已在目前的行程中')
       return
     }
     setLoading(true)
@@ -407,7 +414,7 @@ export default function Home() {
 
   const addDay = () => {
     const newDayId = `day-${days.length + 1}`
-    setDays([...days, { id: newDayId, title: `Day ${days.length + 1}`, items: [] }])
+    setDays([...days, { id: newDayId, title: `第 ${days.length + 1} 天`, items: [] }])
     setActiveDayId(newDayId)
   }
 
@@ -442,7 +449,7 @@ export default function Home() {
       calculateTravelTimes(newItinerary)
       setDirections(result)
     } catch (err) {
-      setError('優化失敗')
+      setError('最佳化失敗')
     } finally {
       setLoading(false)
     }
@@ -477,8 +484,8 @@ export default function Home() {
     return (
       <div className="container">
         <div className="header">
-          <h1>Travel Architect</h1>
-          <p>Please configure NEXT_PUBLIC_GOOGLE_MAPS_API_KEY in Environment Variables.</p>
+          <h1>旅遊建築師</h1>
+          <p>請在環境變數中設定 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY。</p>
         </div>
       </div>
     )
@@ -488,8 +495,60 @@ export default function Home() {
     <LoadScript googleMapsApiKey={apiKey} libraries={['places']}>
       <div className="container">
         <header className="header">
-          <h1>Travel <br />Architect</h1>
-          <p>Crafting seamless journeys through data and design. Start by adding your first destination.</p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <h1>旅遊建築師 <br />Travel Architect</h1>
+              <p>透過數據與設計，打造無縫的旅行體驗。從新增第一個目的地開始吧。</p>
+            </div>
+            <button 
+              onClick={() => setShowGuide(!showGuide)}
+              style={{ 
+                background: 'transparent', 
+                border: '1px solid var(--border)', 
+                padding: '8px 16px', 
+                borderRadius: '4px', 
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontSize: '0.9rem',
+                color: 'var(--text-dim)'
+              }}
+            >
+              <IconHelp /> 使用說明
+            </button>
+          </div>
+          
+          {showGuide && (
+            <div style={{ 
+              marginTop: '32px', 
+              padding: '24px', 
+              background: '#f8fafc', 
+              border: '1px solid var(--border)', 
+              borderRadius: '8px',
+              animation: 'reveal 0.4s ease-out'
+            }}>
+              <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', marginBottom: '16px' }}>如何規劃您的旅程？</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '24px' }}>
+                <div>
+                  <h4 style={{ color: 'var(--primary)', marginBottom: '8px' }}>1. 搜尋景點</h4>
+                  <p style={{ fontSize: '0.9rem', color: 'var(--text-dim)', lineHeight: '1.5' }}>使用自動完成搜尋，或開啟「批量模式」一次貼上多個地址。</p>
+                </div>
+                <div>
+                  <h4 style={{ color: 'var(--primary)', marginBottom: '8px' }}>2. 安排行程</h4>
+                  <p style={{ fontSize: '0.9rem', color: 'var(--text-dim)', lineHeight: '1.5' }}>點擊「加入行程」將景點排入計畫，您可以隨時拖曳右側清單調整順序。</p>
+                </div>
+                <div>
+                  <h4 style={{ color: 'var(--primary)', marginBottom: '8px' }}>3. 智慧最佳化</h4>
+                  <p style={{ fontSize: '0.9rem', color: 'var(--text-dim)', lineHeight: '1.5' }}>若景點超過 3 個，點擊「智慧最佳化」按鈕，系統將自動計算最省時的順序。</p>
+                </div>
+                <div>
+                  <h4 style={{ color: 'var(--primary)', marginBottom: '8px' }}>4. 導航與儲存</h4>
+                  <p style={{ fontSize: '0.9rem', color: 'var(--text-dim)', lineHeight: '1.5' }}>點擊「開始導航」即可同步至 Google 地圖。您的進度會自動儲存在瀏覽器中。</p>
+                </div>
+              </div>
+            </div>
+          )}
         </header>
 
         <main className="content">
@@ -497,17 +556,17 @@ export default function Home() {
             <div className="search-box">
               <label className="batch-mode-label">
                 <input type="checkbox" className="batch-mode-checkbox" checked={isBatchMode} onChange={(e) => setIsBatchMode(e.target.checked)} />
-                Batch Input Mode
+                批量輸入模式
               </label>
               
               {isBatchMode ? (
-                <textarea className="search-input" placeholder="Enter multiple places, one per line..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} rows={5} style={{ resize: 'none' }} />
+                <textarea className="search-input" placeholder="輸入多個景點，每行一個..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} rows={5} style={{ resize: 'none' }} />
               ) : (
                 <Autocomplete onLoad={onAutocompleteLoad} onPlaceChanged={onPlaceChanged}>
-                  <input type="text" className="search-input" placeholder="Where do you want to go?" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+                  <input type="text" className="search-input" placeholder="您想去哪裡？" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
                 </Autocomplete>
               )}
-              <button className="search-button" onClick={searchPlace} disabled={loading}>{loading ? 'Searching...' : 'Search'}</button>
+              <button className="search-button" onClick={searchPlace} disabled={loading}>{loading ? '搜尋中...' : '搜尋目的地'}</button>
               {error && <div className="error">{error}</div>}
             </div>
 
@@ -523,24 +582,43 @@ export default function Home() {
                   <div className="place-card">
                     <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.8rem' }}>{selectedPlaces[0].name}</h3>
                     <p>{selectedPlaces[0].address}</p>
-                    <button className="search-button" onClick={() => addToItinerary(selectedPlaces[0])} style={{ marginTop: '0', background: 'var(--primary)' }}>Add to Itinerary</button>
+                    <button className="search-button" onClick={() => addToItinerary(selectedPlaces[0])} style={{ marginTop: '0', background: 'var(--primary)' }}>加入行程</button>
                   </div>
                 ) : (
                   <div className="places-results">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                      <h3 style={{ margin: 0, fontSize: '1.8rem', fontFamily: 'var(--font-display)' }}>Results ({selectedPlaces.length})</h3>
-                      <button className="search-button" onClick={() => addMultipleToItinerary(selectedPlaces)} style={{ marginTop: '0', width: 'auto', padding: '10px 20px', background: 'var(--primary)' }}>Add All</button>
+                      <h3 style={{ margin: 0, fontSize: '1.8rem', fontFamily: 'var(--font-display)' }}>搜尋結果 ({selectedPlaces.length})</h3>
+                      <button className="search-button" onClick={() => addMultipleToItinerary(selectedPlaces)} style={{ marginTop: '0', width: 'auto', padding: '10px 20px', background: 'var(--primary)' }}>全部加入</button>
                     </div>
                     {selectedPlaces.map(p => (
                       <div key={p.id} className="place-card" style={{ marginBottom: '16px' }}>
                         <h4 style={{ marginBottom: '4px', fontSize: '1.2rem', fontFamily: 'var(--font-display)' }}>{p.name}</h4>
                         <p style={{ color: 'var(--text-dim)', marginBottom: '16px', fontSize: '0.9rem' }}>{p.address}</p>
-                        <button className="delete-button" onClick={() => addToItinerary(p)} style={{ color: 'var(--primary)', fontWeight: '600', padding: 0 }}>+ ADD ITEM</button>
+                        <button className="delete-button" onClick={() => addToItinerary(p)} style={{ color: 'var(--primary)', fontWeight: '600', padding: 0 }}>+ 新增景點</button>
                       </div>
                     ))}
                   </div>
                 )}
               </>
+            )}
+
+            {places.length > 0 && (
+              <div className="search-history">
+                <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', marginBottom: '16px' }}>搜尋歷史</h3>
+                {places.slice(-5).reverse().map((place) => (
+                  <div
+                    key={place.id}
+                    className="history-item"
+                    onClick={() => {
+                      setSelectedPlaces([place])
+                      setMapCenter({ lat: place.lat, lng: place.lng })
+                    }}
+                  >
+                    <div className="history-item-name">{place.name}</div>
+                    <div className="history-item-address">{place.address}</div>
+                  </div>
+                ))}
+              </div>
             )}
           </section>
 
@@ -552,14 +630,14 @@ export default function Home() {
                   {days.length > 1 && <button onClick={() => removeDay(day.id)} style={{ marginLeft: '-10px', marginTop: '-20px', background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '50%', width: '20px', height: '20px', fontSize: '12px', cursor: 'pointer', zIndex: 2 }}>×</button>}
                 </div>
               ))}
-              <button onClick={addDay} style={{ padding: '10px 20px', background: 'transparent', color: 'var(--primary)', border: '1px dashed var(--primary)', borderRadius: '4px', cursor: 'pointer', fontWeight: '600', whiteSpace: 'nowrap' }}>+ Add Day</button>
+              <button onClick={addDay} style={{ padding: '10px 20px', background: 'transparent', color: 'var(--primary)', border: '1px dashed var(--primary)', borderRadius: '4px', cursor: 'pointer', fontWeight: '600', whiteSpace: 'nowrap' }}>+ 新增天數</button>
             </div>
 
             <div className="itinerary-header">
-              <h2 className="itinerary-title" style={{ fontFamily: 'var(--font-display)', fontSize: '3rem' }}>Your Route</h2>
+              <h2 className="itinerary-title" style={{ fontFamily: 'var(--font-display)', fontSize: '3rem' }}>行程規劃</h2>
               <div style={{ display: 'flex', gap: '12px' }}>
-                {itinerary.length >= 3 && <button className="navigation-button-main" onClick={optimizeItinerary} disabled={loading} style={{ background: 'var(--text-main)' }}><IconMagic /> {loading ? 'Optimizing...' : 'Optimize'}</button>}
-                {itinerary.length > 0 && <button className="navigation-button-main" onClick={startNavigation}><IconNavigation /> Navigate</button>}
+                {itinerary.length >= 3 && <button className="navigation-button-main" onClick={optimizeItinerary} disabled={loading} style={{ background: 'var(--text-main)' }}><IconMagic /> {loading ? '最佳化中...' : '智慧最佳化'}</button>}
+                {itinerary.length > 0 && <button className="navigation-button-main" onClick={startNavigation}><IconNavigation /> 開始導航</button>}
               </div>
             </div>
 
@@ -568,7 +646,7 @@ export default function Home() {
                 <div className="empty-state-icon">
                   <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
                 </div>
-                <p>Your journey is a blank canvas. Start adding destinations to begin.</p>
+                <p>您的旅程還是一張畫布。開始加入目的地來開啟旅程吧。</p>
               </div>
             ) : (
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
