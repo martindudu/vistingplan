@@ -16,10 +16,18 @@ const instrument = Instrument_Serif({
 })
 
 export const metadata: Metadata = {
-  title: '旅遊規劃器 | 您的完美行程規劃專家',
+  title: '旅遊建築師 | 您的完美行程規劃專家',
   description: '使用 Google Maps 規劃您的旅遊行程，享受無縫的旅行體驗',
+  manifest: '/manifest.json',
+  themeColor: '#0a0a0c',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: '旅遊建築師',
+  },
   icons: {
     icon: '/icon.svg',
+    apple: '/icon.svg',
   },
 }
 

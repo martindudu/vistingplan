@@ -42,6 +42,20 @@ interface DayPlan {
   id: string
   title: string
   items: ItineraryItem[]
+  startTime?: string
+}
+
+// 時間工具
+const addMinutes = (time: string, mins: number) => {
+  const [h, m] = time.split(':').map(Number)
+  const d = new Date(); d.setHours(h, m + mins)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+const parseDur = (t?: string) => {
+  if (!t) return 0
+  const m = t.match(/(\d+)\s*(h|m)/gi); let total = 0
+  m?.forEach(x => { const v = parseInt(x); if (x.includes('h')) total += v * 60; else total += v })
+  return total || 30
 }
 
 const defaultCenter = { lat: 25.0330, lng: 121.5654 }
@@ -75,7 +89,7 @@ const IconSparkles = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path><path d="M5 3v4"></path><path d="M19 17v4"></path><path d="M3 5h4"></path><path d="M17 19h4"></path></svg>
 )
 
-function SortableItem({ item, onDelete, onUpdate }: { item: ItineraryItem, onDelete: (id: string) => void, onUpdate: (id: string, updates: Partial<ItineraryItem>) => void }) {
+function SortableItem({ item, onDelete, onUpdate, startTime, endTime }: { item: ItineraryItem, onDelete: (id: string) => void, onUpdate: (id: string, updates: Partial<ItineraryItem>) => void, startTime?: string, endTime?: string }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id })
   const style = { transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 100 : 1 }
 
@@ -89,14 +103,13 @@ function SortableItem({ item, onDelete, onUpdate }: { item: ItineraryItem, onDel
       )}
       <div className="item-details">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <h3 className="item-name">{item.name}</h3>
-          <button className="delete-button" onClick={(e) => { e.stopPropagation(); onDelete(item.id); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ccc' }}>
+          <div>
+            {startTime && <div style={{ fontSize: '0.75rem', fontWeight: '800', color: 'var(--accent)', marginBottom: '4px' }}>{startTime} - {endTime}</div>}
+            <h3 className="item-name">{item.name}</h3>
+          </div>
+          <button className="delete-button" onClick={(e) => { e.stopPropagation(); onDelete(item.id); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.2)' }}>
             <IconTrash />
           </button>
-        </div>
-        <div className="item-meta">
-          {item.rating && <span>★ {item.rating}</span>}
-          <span>{item.address.split(',')[0]}</span>
         </div>
         
         <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -106,39 +119,22 @@ function SortableItem({ item, onDelete, onUpdate }: { item: ItineraryItem, onDel
               value={item.stayDuration || 60} 
               onClick={(e) => e.stopPropagation()}
               onChange={(e) => onUpdate(item.id, { stayDuration: parseInt(e.target.value) })}
-              style={{ fontSize: '0.75rem', border: '1px solid var(--border)', borderRadius: '4px', padding: '2px 4px', background: 'transparent', color: '#fff' }}
+              style={{ fontSize: '0.75rem', border: '1px solid var(--glass-border)', borderRadius: '4px', padding: '2px 4px', background: 'transparent', color: '#fff' }}
             >
-              <option value={30}>30 分鐘</option>
-              <option value={60}>1 小時</option>
-              <option value={90}>1.5 小時</option>
-              <option value={120}>2 小時</option>
-              <option value={180}>3 小時</option>
-              <option value={240}>4 小時</option>
+              {[30, 60, 90, 120, 180, 240].map(v => <option key={v} value={v} style={{ color: '#000' }}>{v >= 60 ? `${v/60} 小時` : `${v} 分鐘`}</option>)}
             </select>
           </div>
           <textarea 
-            placeholder="新增備註 (如：預約號碼、必買清單...)"
-            value={item.notes || ''}
-            onClick={(e) => e.stopPropagation()}
+            placeholder="新增備註..." value={item.notes || ''} onClick={(e) => e.stopPropagation()}
             onChange={(e) => onUpdate(item.id, { notes: e.target.value })}
-            style={{ 
-              width: '100%', 
-              fontSize: '0.8rem', 
-              border: 'none', 
-              background: 'rgba(255,255,255,0.05)', 
-              color: '#fff',
-              borderRadius: '8px', 
-              padding: '8px',
-              resize: 'none',
-              fontFamily: 'inherit'
-            }}
+            style={{ width: '100%', fontSize: '0.8rem', border: 'none', background: 'rgba(255,255,255,0.05)', color: '#fff', borderRadius: '8px', padding: '8px', resize: 'none', fontFamily: 'inherit' }}
             rows={2}
           />
         </div>
 
         {item.travelTime && (
           <div className="travel-badge">
-            <IconClock /> {item.travelTime}
+            <IconClock /> 下一站: {item.travelTime}
           </div>
         )}
       </div>
@@ -148,7 +144,7 @@ function SortableItem({ item, onDelete, onUpdate }: { item: ItineraryItem, onDel
 
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState('')
-  const [days, setDays] = useState<DayPlan[]>([{ id: 'day-1', title: 'Day 1', items: [] }])
+  const [days, setDays] = useState<DayPlan[]>([{ id: 'day-1', title: 'Day 1', items: [], startTime: '09:00' }])
   const [activeDayId, setActiveDayId] = useState('day-1')
   const [mapCenter, setMapCenter] = useState(defaultCenter)
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null)
@@ -164,27 +160,19 @@ export default function Home() {
   const activeDay = days.find(d => d.id === activeDayId) || days[0]
   const itinerary = activeDay.items
 
-  const updateActiveDayItems = (newItems: ItineraryItem[]) => {
-    setDays(days.map(d => d.id === activeDayId ? { ...d, items: newItems } : d))
+  const updateActiveDay = (updates: Partial<DayPlan>) => {
+    setDays(days.map(d => d.id === activeDayId ? { ...d, ...updates } : d))
   }
-
-  const handleUpdateItem = (id: string, updates: Partial<ItineraryItem>) => {
-    const newItems = itinerary.map(item => item.id === id ? { ...item, ...updates } : item)
-    updateActiveDayItems(newItems)
-  }
+  const updateActiveDayItems = (newItems: ItineraryItem[]) => updateActiveDay({ items: newItems })
+  const handleUpdateItem = (id: string, updates: Partial<ItineraryItem>) => updateActiveDayItems(itinerary.map(i => i.id === id ? { ...i, ...updates } : i))
 
   const fetchDetails = async (placeId: string): Promise<Partial<ItineraryItem>> => {
     if (!mapRef.current || typeof google === 'undefined') return {}
     const service = new google.maps.places.PlacesService(mapRef.current)
     return new Promise((resolve) => {
-      service.getDetails({ placeId, fields: ['photos', 'rating', 'user_ratings_total', 'opening_hours'] }, (p, status) => {
-        if (status === 'OK' && p) {
-          resolve({
-            photoUrl: p.photos?.[0]?.getUrl({ maxWidth: 200 }),
-            rating: p.rating,
-            openingHours: p.opening_hours?.weekday_text
-          })
-        } else resolve({})
+      service.getDetails({ placeId, fields: ['photos', 'rating', 'opening_hours'] }, (p, status) => {
+        if (status === 'OK' && p) resolve({ photoUrl: p.photos?.[0]?.getUrl({ maxWidth: 200 }), rating: p.rating })
+        else resolve({})
       })
     })
   }
@@ -193,132 +181,82 @@ export default function Home() {
     if (typeof google === 'undefined' || !mapRef.current) return
     setDiscoveryLoading(true)
     const service = new google.maps.places.PlacesService(mapRef.current)
-    let center = location
-    if (!center) {
-      if (itinerary.length > 0) {
-        center = { lat: itinerary[itinerary.length - 1].lat, lng: itinerary[itinerary.length - 1].lng }
-      } else {
-        center = defaultCenter
-      }
-    }
-    const request: google.maps.places.PlaceSearchRequest = {
-      location: center,
-      radius: 3000,
-      type: discoveryCategory as any
-    }
-    service.nearbySearch(request, (results, status) => {
+    let center = location || (itinerary.length > 0 ? { lat: itinerary[itinerary.length - 1].lat, lng: itinerary[itinerary.length - 1].lng } : defaultCenter)
+    service.nearbySearch({ location: center, radius: 3000, type: discoveryCategory as any }, (results, status) => {
       if (status === 'OK' && results) {
-        setDiscoveryResults(results.slice(0, 10).map(r => ({
-          id: r.place_id || Date.now().toString(),
-          name: r.name || '',
-          address: r.vicinity || '',
-          lat: r.geometry?.location?.lat() || 0,
-          lng: r.geometry?.location?.lng() || 0,
-          rating: r.rating,
-          photoUrl: r.photos?.[0]?.getUrl({ maxWidth: 200 }),
-          stayDuration: 60
-        })))
+        setDiscoveryResults(results.slice(0, 10).map(r => ({ id: r.place_id || Date.now().toString(), name: r.name || '', address: r.vicinity || '', lat: r.geometry?.location?.lat() || 0, lng: r.geometry?.location?.lng() || 0, rating: r.rating, photoUrl: r.photos?.[0]?.getUrl({ maxWidth: 200 }), stayDuration: 60 })))
       }
       setDiscoveryLoading(false)
     })
   }
 
-  useEffect(() => {
-    if (itinerary.length > 0 || discoveryResults.length > 0) searchNearby()
-  }, [discoveryCategory])
+  useEffect(() => { if (itinerary.length > 0 || discoveryResults.length > 0) searchNearby() }, [discoveryCategory])
 
   const onPlaceChanged = async () => {
     if (autocomplete) {
       const place = autocomplete.getPlace()
       if (place.geometry?.location) {
-        setLoading(true)
-        const details = await fetchDetails(place.place_id!)
-        const newItem: ItineraryItem = {
-          id: place.place_id || Date.now().toString(),
-          name: place.name || '',
-          address: place.formatted_address || '',
-          lat: place.geometry.location.lat(),
-          lng: place.geometry.location.lng(),
-          stayDuration: 60,
-          ...details
-        }
-        updateActiveDayItems([...itinerary, newItem])
-        setMapCenter({ lat: newItem.lat, lng: newItem.lng })
-        calculateRoute([...itinerary, newItem], travelMode)
-        setSearchQuery('')
-        setLoading(false)
-        searchNearby({ lat: newItem.lat, lng: newItem.lng })
+        setLoading(true); const details = await fetchDetails(place.place_id!)
+        const newItem = { id: place.place_id || Date.now().toString(), name: place.name || '', address: place.formatted_address || '', lat: place.geometry.location.lat(), lng: place.geometry.location.lng(), stayDuration: 60, ...details }
+        const newItinerary = [...itinerary, newItem]
+        updateActiveDayItems(newItinerary); setMapCenter({ lat: newItem.lat, lng: newItem.lng })
+        calculateRoute(newItinerary); setSearchQuery(''); setLoading(false); searchNearby({ lat: newItem.lat, lng: newItem.lng })
       }
     }
   }
 
   const calculateRoute = async (items: ItineraryItem[], mode: string = travelMode) => {
-    if (items.length < 2 || !directionsServiceRef.current || typeof google === 'undefined') {
-      setDirections(null)
-      return
-    }
+    if (items.length < 2 || !directionsServiceRef.current || typeof google === 'undefined') { setDirections(null); return }
     const res = await new Promise<google.maps.DirectionsResult | null>((resolve) => {
-      directionsServiceRef.current!.route({
-        origin: { lat: items[0].lat, lng: items[0].lng },
-        destination: { lat: items[items.length - 1].lat, lng: items[items.length - 1].lng },
-        waypoints: items.slice(1, -1).map(i => ({ location: { lat: i.lat, lng: i.lng }, stopover: true })),
-        travelMode: mode as google.maps.TravelMode
-      }, (result, status) => resolve(status === 'OK' ? result : null))
+      directionsServiceRef.current!.route({ origin: { lat: items[0].lat, lng: items[0].lng }, destination: { lat: items[items.length - 1].lat, lng: items[items.length - 1].lng }, waypoints: items.slice(1, -1).map(i => ({ location: { lat: i.lat, lng: i.lng }, stopover: true })), travelMode: mode as google.maps.TravelMode }, (result, status) => resolve(status === 'OK' ? result : null))
     })
     if (res) {
-      setDirections(res)
-      const updatedItems = [...items]
+      setDirections(res); const updatedItems = [...items]
       res.routes[0].legs.forEach((leg, i) => { if (updatedItems[i]) updatedItems[i].travelTime = leg.duration?.text })
       updateActiveDayItems(updatedItems)
     }
   }
 
-  useEffect(() => {
-    if (itinerary.length >= 2) calculateRoute(itinerary, travelMode)
-  }, [travelMode])
+  useEffect(() => { if (itinerary.length >= 2) calculateRoute(itinerary, travelMode) }, [travelMode])
 
   const optimize = async () => {
     if (itinerary.length < 3 || !directionsServiceRef.current || typeof google === 'undefined') return
     setLoading(true)
     const res = await new Promise<google.maps.DirectionsResult | null>((resolve) => {
-      directionsServiceRef.current!.route({
-        origin: { lat: itinerary[0].lat, lng: itinerary[0].lng },
-        destination: { lat: itinerary[itinerary.length - 1].lat, lng: itinerary[itinerary.length - 1].lng },
-        waypoints: itinerary.slice(1, -1).map(i => ({ location: { lat: i.lat, lng: i.lng }, stopover: true })),
-        travelMode: travelMode as google.maps.TravelMode,
-        optimizeWaypoints: true
-      }, (result, status) => resolve(status === 'OK' ? result : null))
+      directionsServiceRef.current!.route({ origin: { lat: itinerary[0].lat, lng: itinerary[0].lng }, destination: { lat: itinerary[itinerary.length - 1].lat, lng: itinerary[itinerary.length - 1].lng }, waypoints: itinerary.slice(1, -1).map(i => ({ location: { lat: i.lat, lng: i.lng }, stopover: true })), travelMode: travelMode as google.maps.TravelMode, optimizeWaypoints: true }, (result, status) => resolve(status === 'OK' ? result : null))
     })
     if (res) {
-      const order = res.routes[0].waypoint_order
-      const middle = itinerary.slice(1, -1)
-      const optimized = [itinerary[0], ...order.map(i => middle[i]), itinerary[itinerary.length - 1]]
+      const order = res.routes[0].waypoint_order; const middle = itinerary.slice(1, -1); const optimized = [itinerary[0], ...order.map(i => middle[i]), itinerary[itinerary.length - 1]]
       res.routes[0].legs.forEach((leg, i) => { optimized[i].travelTime = leg.duration?.text })
-      updateActiveDayItems(optimized)
-      setDirections(res)
+      updateActiveDayItems(optimized); setDirections(res)
     }
     setLoading(false)
   }
 
   const generateShareLink = () => {
     try {
-      const simplified = days.map(d => ({ t: d.title, i: d.items.map(item => ({ p: item.id, n: item.name, a: item.address, lt: item.lat, lg: item.lng, no: item.notes, sd: item.stayDuration })) }))
+      const simplified = days.map(d => ({ t: d.title, s: d.startTime, i: d.items.map(item => ({ p: item.id, n: item.name, a: item.address, lt: item.lat, lg: item.lng, no: item.notes, sd: item.stayDuration })) }))
       const encoded = btoa(encodeURIComponent(JSON.stringify({ d: simplified, m: travelMode })))
       return `${window.location.origin}${window.location.pathname}?plan=${encoded}`
     } catch (e) { return null }
   }
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const planData = params.get('plan')
+    const params = new URLSearchParams(window.location.search); const planData = params.get('plan')
     if (planData) {
       try {
         const decoded = JSON.parse(decodeURIComponent(atob(planData)))
-        setDays(decoded.d.map((day: any, idx: number) => ({ id: `day-${idx + 1}`, title: day.t, items: day.i.map((item: any) => ({ id: item.p, name: item.n, address: item.a, lat: item.lt, lng: item.lg, notes: item.no, stayDuration: item.sd })) })))
-        setTravelMode(decoded.m || 'DRIVING')
-        window.history.replaceState({}, '', window.location.pathname)
+        setDays(decoded.d.map((day: any, idx: number) => ({ id: `day-${idx + 1}`, title: day.t, startTime: day.s || '09:00', items: day.i.map((item: any) => ({ id: item.p, name: item.n, address: item.a, lat: item.lt, lng: item.lg, notes: item.no, stayDuration: item.sd })) })))
+        setTravelMode(decoded.m || 'DRIVING'); window.history.replaceState({}, '', window.location.pathname)
       } catch (e) {}
     }
+  }, [])
+
+  // 時間表計算
+  const schedule = itinerary.reduce((acc: { start: string, end: string }[], item, idx) => {
+    const start = idx === 0 ? (activeDay.startTime || '09:00') : addMinutes(acc[idx - 1].end, parseDur(itinerary[idx - 1].travelTime))
+    const end = addMinutes(start, item.stayDuration || 60)
+    acc.push({ start, end }); return acc
   }, [])
 
   const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }))
@@ -326,16 +264,8 @@ export default function Home() {
     const { active, over } = event
     if (over && active.id !== over.id) {
       const oldIdx = itinerary.findIndex(i => i.id === active.id), newIdx = itinerary.findIndex(i => i.id === over.id)
-      const newItems = arrayMove(itinerary, oldIdx, newIdx)
-      updateActiveDayItems(newItems)
-      calculateRoute(newItems)
+      const newItems = arrayMove(itinerary, oldIdx, newIdx); updateActiveDayItems(newItems); calculateRoute(newItems)
     }
-  }
-
-  const startNav = () => {
-    if (itinerary.length === 0) return
-    const wp = itinerary.slice(0, -1).map(i => encodeURIComponent(i.address)).join('|'), dest = encodeURIComponent(itinerary[itinerary.length - 1].address)
-    window.open(`https://www.google.com/maps/dir/?api=1&waypoints=${wp}&destination=${dest}`, '_blank')
   }
 
   return (
@@ -354,32 +284,22 @@ export default function Home() {
           </div>
 
           <div className="transport-selector">
-            <button className={`day-tab-btn ${travelMode === 'DRIVING' ? 'active' : ''}`} onClick={() => setTravelMode('DRIVING')}><IconCar /> 開車</button>
-            <button className={`day-tab-btn ${travelMode === 'WALKING' ? 'active' : ''}`} onClick={() => setTravelMode('WALKING')}><IconWalk /> 走路</button>
-            <button className={`day-tab-btn ${travelMode === 'TRANSIT' ? 'active' : ''}`} onClick={() => setTravelMode('TRANSIT')}><IconTrain /> 大眾運輸</button>
+            {['DRIVING', 'WALKING', 'TRANSIT'].map(m => (
+              <button key={m} className={`day-tab-btn ${travelMode === m ? 'active' : ''}`} onClick={() => setTravelMode(m)}>
+                {m === 'DRIVING' ? <IconCar /> : m === 'WALKING' ? <IconWalk /> : <IconTrain />} {m === 'DRIVING' ? '開車' : m === 'WALKING' ? '走路' : '大眾運輸'}
+              </button>
+            ))}
           </div>
 
-          {/* 探索周邊 Discovery Section */}
           <div className="discovery-section" style={{ marginBottom: '32px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', color: 'var(--accent)' }}>
-              <IconSparkles /> <h2 style={{ fontSize: '1rem', fontWeight: '800', textTransform: 'uppercase' }}>探索周邊</h2>
-            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', color: 'var(--accent)' }}><IconSparkles /> <h2 style={{ fontSize: '1rem', fontWeight: '800', textTransform: 'uppercase' }}>探索周邊</h2></div>
             <div style={{ display: 'flex', gap: '4px', marginBottom: '16px' }}>
-              <button className={`day-tab-btn ${discoveryCategory === 'tourist_attraction' ? 'active' : ''}`} onClick={() => setDiscoveryCategory('tourist_attraction')} style={{ fontSize: '0.7rem' }}>景點</button>
-              <button className={`day-tab-btn ${discoveryCategory === 'restaurant' ? 'active' : ''}`} onClick={() => setDiscoveryCategory('restaurant')} style={{ fontSize: '0.7rem' }}>美食</button>
-              <button className={`day-tab-btn ${discoveryCategory === 'lodging' ? 'active' : ''}`} onClick={() => setDiscoveryCategory('lodging')} style={{ fontSize: '0.7rem' }}>住宿</button>
+              {['tourist_attraction', 'restaurant', 'lodging'].map(c => <button key={c} className={`day-tab-btn ${discoveryCategory === c ? 'active' : ''}`} onClick={() => setDiscoveryCategory(c)} style={{ fontSize: '0.7rem' }}>{c==='tourist_attraction'?'景點':c==='restaurant'?'美食':'住宿'}</button>)}
             </div>
             <div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '8px', scrollbarWidth: 'none' }}>
               {discoveryLoading ? <div style={{ color: 'var(--text-dim)', fontSize: '0.8rem' }}>探索中...</div> : 
                 discoveryResults.map(res => (
-                  <div key={res.id} onClick={async () => {
-                    setLoading(true)
-                    const details = await fetchDetails(res.id)
-                    const updated = [...itinerary, { ...res, ...details }]
-                    updateActiveDayItems(updated)
-                    calculateRoute(updated)
-                    setLoading(false)
-                  }} style={{ width: '120px', flexShrink: 0, cursor: 'pointer' }}>
+                  <div key={res.id} onClick={async () => { setLoading(true); const details = await fetchDetails(res.id); const updated = [...itinerary, { ...res, ...details }]; updateActiveDayItems(updated); calculateRoute(updated); setLoading(false) }} style={{ width: '120px', flexShrink: 0, cursor: 'pointer' }}>
                     <div style={{ width: '120px', height: '80px', borderRadius: '12px', overflow: 'hidden', marginBottom: '8px', background: 'var(--glass-surface)', border: '1px solid var(--glass-border)' }}>
                       {res.photoUrl ? <img src={res.photoUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', color: 'var(--text-dim)' }}>無照片</div>}
                     </div>
@@ -393,22 +313,27 @@ export default function Home() {
 
           <div className="day-tabs">
             {days.map(d => (<button key={d.id} className={`day-tab-btn ${activeDayId === d.id ? 'active' : ''}`} onClick={() => setActiveDayId(d.id)}>{d.title}</button>))}
-            <button className="day-tab-btn" onClick={() => { const newId = `day-${days.length + 1}`; setDays([...days, { id: newId, title: `Day ${days.length + 1}`, items: [] }]); setActiveDayId(newId); }}>+ Add</button>
+            <button className="day-tab-btn" onClick={() => { const newId = `day-${days.length + 1}`; setDays([...days, { id: newId, title: `Day ${days.length + 1}`, items: [], startTime: '09:00' }]); setActiveDayId(newId) }}>+ Add</button>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px', padding: '16px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>
+            <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>今日出發時間:</span>
+            <input type="time" value={activeDay.startTime || '09:00'} onChange={(e) => updateActiveDay({ startTime: e.target.value })} style={{ background: 'transparent', color: '#fff', border: 'none', fontSize: '1rem', fontWeight: '800', cursor: 'pointer' }} />
           </div>
 
           <div className="itinerary-scroll-area">
             {itinerary.length === 0 ? <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.3)' }}>暫無行程</div> : (
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
                 <SortableContext items={itinerary.map(i => i.id)} strategy={verticalListSortingStrategy}>
-                  {itinerary.map(item => (<SortableItem key={item.id} item={item} onUpdate={handleUpdateItem} onDelete={(id) => { const updated = itinerary.filter(i => i.id !== id); updateActiveDayItems(updated); calculateRoute(updated); }} />))}
+                  {itinerary.map((item, idx) => (<SortableItem key={item.id} item={item} onUpdate={handleUpdateItem} onDelete={(id) => { const updated = itinerary.filter(i => i.id !== id); updateActiveDayItems(updated); calculateRoute(updated); }} startTime={schedule[idx]?.start} endTime={schedule[idx]?.end} />))}
                 </SortableContext>
               </DndContext>
             )}
           </div>
 
           <div className="action-bar">
-            {itinerary.length >= 3 && <button className="btn-outline" onClick={optimize} disabled={loading} style={{ flex: 1 }}><IconMagic />智慧排序</button>}
-            {itinerary.length > 0 && <button className="btn-primary" onClick={startNav} style={{ flex: 2 }}><IconNavigation /> 開始導航</button>}
+            {itinerary.length >= 3 && <button className="btn-outline" onClick={optimize} disabled={loading} style={{ flex: 1 }}><IconMagic /> 智慧排序</button>}
+            {itinerary.length > 0 && <button className="btn-primary" onClick={() => { const wp = itinerary.slice(0, -1).map(i => encodeURIComponent(i.address)).join('|'), dest = encodeURIComponent(itinerary[itinerary.length - 1].address); window.open(`https://www.google.com/maps/dir/?api=1&waypoints=${wp}&destination=${dest}`, '_blank') }} style={{ flex: 2 }}><IconNavigation /> 開始導航</button>}
           </div>
         </aside>
 
