@@ -237,12 +237,35 @@ body::after {
   border: 2px solid #fff !important;
 }
 
-/* 交通選擇器 */
-.transport-selector {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+/* 街景切換按鈕 */
+.btn-peek {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--glass-border);
+  color: #fff;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-peek:hover {
+  background: var(--accent);
+  border-color: #fff;
+  transform: scale(1.1);
+}
+
+/* 行程捲動區高度修正 */
+.itinerary-scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 4px;
   margin-bottom: 24px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--glass-border) transparent;
 }
 
 /* 修復地圖容器在手機上的顯示 */

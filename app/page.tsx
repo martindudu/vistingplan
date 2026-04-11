@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { GoogleMap, LoadScript, Marker, DirectionsRenderer, Autocomplete } from '@react-google-maps/api'
+import { GoogleMap, LoadScript, Marker, DirectionsRenderer, Autocomplete, StreetViewPanorama } from '@react-google-maps/api'
+import html2canvas from 'html2canvas'
 import {
   DndContext,
   closestCenter,
@@ -35,7 +36,16 @@ interface ItineraryItem extends Place {
   userRatingsTotal?: number
   openingHours?: string[]
   notes?: string
-  stayDuration?: number // in minutes
+  stayDuration?: number
+  weather?: { temp: number, code: number }
+}
+
+const getWeatherIcon = (code?: number) => {
+  if (code === undefined) return '☀️'
+  if (code === 0) return '☀️'
+  if (code < 4) return '☁️'
+  if (code < 70) return '🌧️'
+  return '❄️'
 }
 
 interface DayPlan {
@@ -45,7 +55,6 @@ interface DayPlan {
   startTime?: string
 }
 
-// 時間工具
 const addMinutes = (time: string, mins: number) => {
   const [h, m] = time.split(':').map(Number)
   const d = new Date(); d.setHours(h, m + mins)
@@ -88,8 +97,14 @@ const IconShare = () => (
 const IconSparkles = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path><path d="M5 3v4"></path><path d="M19 17v4"></path><path d="M3 5h4"></path><path d="M17 19h4"></path></svg>
 )
+const IconEye = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+)
+const IconImage = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"></rect><circle cx="9" cy="9" r="2"></circle><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path></svg>
+)
 
-function SortableItem({ item, onDelete, onUpdate, startTime, endTime }: { item: ItineraryItem, onDelete: (id: string) => void, onUpdate: (id: string, updates: Partial<ItineraryItem>) => void, startTime?: string, endTime?: string }) {
+function SortableItem({ item, onDelete, onUpdate, onPeek, startTime, endTime }: { item: ItineraryItem, onDelete: (id: string) => void, onUpdate: (id: string, updates: Partial<ItineraryItem>) => void, onPeek: (lat: number, lng: number) => void, startTime?: string, endTime?: string }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id })
   const style = { transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 100 : 1 }
 
@@ -106,6 +121,12 @@ function SortableItem({ item, onDelete, onUpdate, startTime, endTime }: { item: 
           <div>
             {startTime && <div style={{ fontSize: '0.75rem', fontWeight: '800', color: 'var(--accent)', marginBottom: '4px' }}>{startTime} - {endTime}</div>}
             <h3 className="item-name">{item.name}</h3>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '4px' }}>
+              <button className="btn-peek" onClick={(e) => { e.stopPropagation(); onPeek(item.lat, item.lng); }} title="街景搶先看">
+                <IconEye />
+              </button>
+              {item.weather && <span style={{ fontSize: '0.75rem', background: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: '20px' }}>{getWeatherIcon(item.weather.code)} {item.weather.temp}°C</span>}
+            </div>
           </div>
           <button className="delete-button" onClick={(e) => { e.stopPropagation(); onDelete(item.id); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.2)' }}>
             <IconTrash />
@@ -154,8 +175,11 @@ export default function Home() {
   const [discoveryCategory, setDiscoveryCategory] = useState<string>('tourist_attraction')
   const [discoveryLoading, setDiscoveryLoading] = useState(false)
   const [travelMode, setTravelMode] = useState<string>('DRIVING')
+  const [showStreetView, setShowStreetView] = useState(false)
+  const [streetViewPos, setStreetViewPos] = useState<{lat: number, lng: number} | null>(null)
   const mapRef = useRef<google.maps.Map | null>(null)
   const directionsServiceRef = useRef<google.maps.DirectionsService | null>(null)
+  const posterRef = useRef<HTMLDivElement>(null)
 
   const activeDay = days.find(d => d.id === activeDayId) || days[0]
   const itinerary = activeDay.items
@@ -166,13 +190,22 @@ export default function Home() {
   const updateActiveDayItems = (newItems: ItineraryItem[]) => updateActiveDay({ items: newItems })
   const handleUpdateItem = (id: string, updates: Partial<ItineraryItem>) => updateActiveDayItems(itinerary.map(i => i.id === id ? { ...i, ...updates } : i))
 
-  const fetchDetails = async (placeId: string): Promise<Partial<ItineraryItem>> => {
+  const fetchWeather = async (lat: number, lng: number) => {
+    try {
+      const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true`)
+      const data = await res.json()
+      return { temp: data.current_weather.temperature, code: data.current_weather.weathercode }
+    } catch (e) { return undefined }
+  }
+
+  const fetchDetails = async (placeId: string, lat: number, lng: number): Promise<Partial<ItineraryItem>> => {
     if (!mapRef.current || typeof google === 'undefined') return {}
     const service = new google.maps.places.PlacesService(mapRef.current)
+    const weather = await fetchWeather(lat, lng)
     return new Promise((resolve) => {
       service.getDetails({ placeId, fields: ['photos', 'rating', 'opening_hours'] }, (p, status) => {
-        if (status === 'OK' && p) resolve({ photoUrl: p.photos?.[0]?.getUrl({ maxWidth: 200 }), rating: p.rating })
-        else resolve({})
+        if (status === 'OK' && p) resolve({ photoUrl: p.photos?.[0]?.getUrl({ maxWidth: 200 }), rating: p.rating, weather })
+        else resolve({ weather })
       })
     })
   }
@@ -196,11 +229,14 @@ export default function Home() {
     if (autocomplete) {
       const place = autocomplete.getPlace()
       if (place.geometry?.location) {
-        setLoading(true); const details = await fetchDetails(place.place_id!)
-        const newItem = { id: place.place_id || Date.now().toString(), name: place.name || '', address: place.formatted_address || '', lat: place.geometry.location.lat(), lng: place.geometry.location.lng(), stayDuration: 60, ...details }
+        setLoading(true); 
+        const lat = place.geometry.location.lat()
+        const lng = place.geometry.location.lng()
+        const details = await fetchDetails(place.place_id!, lat, lng)
+        const newItem = { id: place.place_id || Date.now().toString(), name: place.name || '', address: place.formatted_address || '', lat, lng, stayDuration: 60, ...details }
         const newItinerary = [...itinerary, newItem]
-        updateActiveDayItems(newItinerary); setMapCenter({ lat: newItem.lat, lng: newItem.lng })
-        calculateRoute(newItinerary); setSearchQuery(''); setLoading(false); searchNearby({ lat: newItem.lat, lng: newItem.lng })
+        updateActiveDayItems(newItinerary); setMapCenter({ lat, lng })
+        calculateRoute(newItinerary); setSearchQuery(''); setLoading(false); searchNearby({ lat, lng })
       }
     }
   }
@@ -252,12 +288,22 @@ export default function Home() {
     }
   }, [])
 
-  // 時間表計算
   const schedule = itinerary.reduce((acc: { start: string, end: string }[], item, idx) => {
     const start = idx === 0 ? (activeDay.startTime || '09:00') : addMinutes(acc[idx - 1].end, parseDur(itinerary[idx - 1].travelTime))
     const end = addMinutes(start, item.stayDuration || 60)
     acc.push({ start, end }); return acc
   }, [])
+
+  const exportPoster = async () => {
+    if (!posterRef.current) return
+    setLoading(true)
+    const canvas = await html2canvas(posterRef.current, { useCORS: true, backgroundColor: '#0a0a0c' })
+    const link = document.createElement('a')
+    link.download = `TravelPlan-${activeDay.title}.png`
+    link.href = canvas.toDataURL()
+    link.click()
+    setLoading(false)
+  }
 
   const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }))
   const onDragEnd = (event: DragEndEvent) => {
@@ -274,7 +320,10 @@ export default function Home() {
         <aside className="sidebar">
           <header className="header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div><h1>Travel <br />Architect</h1><p>您的專屬旅遊建築師。</p></div>
-            <button className="btn-outline" onClick={() => { const link = generateShareLink(); if (link) { navigator.clipboard.writeText(link); alert('分享連結已複製！'); } }}><IconShare /></button>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button className="btn-outline" onClick={exportPoster} title="匯出精美長圖"><IconImage /></button>
+              <button className="btn-outline" onClick={() => { const link = generateShareLink(); if (link) { navigator.clipboard.writeText(link); alert('分享連結已複製！'); } }}><IconShare /></button>
+            </div>
           </header>
 
           <div className="search-container">
@@ -299,7 +348,7 @@ export default function Home() {
             <div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '8px', scrollbarWidth: 'none' }}>
               {discoveryLoading ? <div style={{ color: 'var(--text-dim)', fontSize: '0.8rem' }}>探索中...</div> : 
                 discoveryResults.map(res => (
-                  <div key={res.id} onClick={async () => { setLoading(true); const details = await fetchDetails(res.id); const updated = [...itinerary, { ...res, ...details }]; updateActiveDayItems(updated); calculateRoute(updated); setLoading(false) }} style={{ width: '120px', flexShrink: 0, cursor: 'pointer' }}>
+                  <div key={res.id} onClick={async () => { setLoading(true); const details = await fetchDetails(res.id, res.lat, res.lng); const updated = [...itinerary, { ...res, ...details }]; updateActiveDayItems(updated); calculateRoute(updated); setLoading(false) }} style={{ width: '120px', flexShrink: 0, cursor: 'pointer' }}>
                     <div style={{ width: '120px', height: '80px', borderRadius: '12px', overflow: 'hidden', marginBottom: '8px', background: 'var(--glass-surface)', border: '1px solid var(--glass-border)' }}>
                       {res.photoUrl ? <img src={res.photoUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', color: 'var(--text-dim)' }}>無照片</div>}
                     </div>
@@ -325,7 +374,7 @@ export default function Home() {
             {itinerary.length === 0 ? <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.3)' }}>暫無行程</div> : (
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
                 <SortableContext items={itinerary.map(i => i.id)} strategy={verticalListSortingStrategy}>
-                  {itinerary.map((item, idx) => (<SortableItem key={item.id} item={item} onUpdate={handleUpdateItem} onDelete={(id) => { const updated = itinerary.filter(i => i.id !== id); updateActiveDayItems(updated); calculateRoute(updated); }} startTime={schedule[idx]?.start} endTime={schedule[idx]?.end} />))}
+                  {itinerary.map((item, idx) => (<SortableItem key={item.id} item={item} onUpdate={handleUpdateItem} onDelete={(id) => { const updated = itinerary.filter(i => i.id !== id); updateActiveDayItems(updated); calculateRoute(updated); }} onPeek={(lat, lng) => { setStreetViewPos({lat, lng}); setShowStreetView(true); }} startTime={schedule[idx]?.start} endTime={schedule[idx]?.end} />))}
                 </SortableContext>
               </DndContext>
             )}
@@ -345,8 +394,36 @@ export default function Home() {
           >
             {itinerary.map(p => <Marker key={p.id} position={{ lat: p.lat, lng: p.lng }} label={{ text: p.name, className: 'map-label' }} />)}
             {directions && <DirectionsRenderer directions={directions} options={{ suppressMarkers: true }} />}
+            
+            {showStreetView && streetViewPos && (
+              <StreetViewPanorama
+                position={streetViewPos}
+                visible={showStreetView}
+                onCloseclick={() => setShowStreetView(false)}
+              />
+            )}
           </GoogleMap>
         </section>
+
+        {/* 隱藏的海報匯出範本 */}
+        <div style={{ position: 'absolute', left: '-9999px', top: 0 }}>
+          <div ref={posterRef} style={{ width: '500px', padding: '40px', background: '#0a0a0c', color: '#fff', fontFamily: 'var(--font-body)' }}>
+            <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '3rem', marginBottom: '8px' }}>Travel Plan</h1>
+            <p style={{ color: 'rgba(255,255,255,0.5)', marginBottom: '40px' }}>{activeDay.title} · Crafted by Travel Architect</p>
+            {itinerary.map((item, idx) => (
+              <div key={item.id} style={{ marginBottom: '24px', display: 'flex', gap: '20px', alignItems: 'center' }}>
+                <div style={{ width: '80px', height: '80px', borderRadius: '12px', overflow: 'hidden' }}>
+                  {item.photoUrl && <img src={item.photoUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.8rem', fontWeight: '800', color: '#3b82f6' }}>{schedule[idx]?.start} - {schedule[idx]?.end}</div>
+                  <h3 style={{ fontSize: '1.2rem', margin: '4px 0' }}>{item.name}</h3>
+                  <p style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)' }}>{item.address}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </LoadScript>
   )
