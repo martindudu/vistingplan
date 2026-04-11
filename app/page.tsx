@@ -514,7 +514,7 @@ export default function Home() {
             {selectedPlaces.length > 0 && (
               <>
                 <div className="map-container">
-                  <GoogleMap mapContainerStyle={{ width: '100%', height: '100%' }} center={mapCenter} zoom={selectedPlaces.length > 1 ? 12 : 15} onLoad={onMapLoad} options={{ streetViewControl: false, mapTypeControl: false, styles: [{ featureType: "water", elementType: "geometry", color: "#e2e8f0" }] }}>
+                  <GoogleMap mapContainerStyle={{ width: '100%', height: '100%' }} center={mapCenter} zoom={selectedPlaces.length > 1 ? 12 : 15} onLoad={onMapLoad} options={{ streetViewControl: false, mapTypeControl: false, styles: [{ featureType: "water", elementType: "geometry", stylers: [{ color: "#e2e8f0" }] }] }}>
                     {selectedPlaces.map(p => <Marker key={p.id} position={{ lat: p.lat, lng: p.lng }} label={{ text: p.name, className: 'map-label' }} />)}
                     {directions && <DirectionsRenderer directions={directions} />}
                   </GoogleMap>
