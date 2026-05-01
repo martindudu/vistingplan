@@ -4,7 +4,7 @@
 
 ## 最新進度摘要
 
-目前已完成 Phase 1、Phase 2、Phase 3、Phase 4、Phase 5。
+目前已完成 Phase 1、Phase 2、Phase 3、Phase 4、Phase 5、Phase 6。
 
 ### 已完成重點
 
@@ -30,11 +30,13 @@
 - 完整離線 fallback 頁面與 PWA icon
 - 文字版行程摘要複製
 - CSV 行程匯出
+- Excel、iCal、Google Calendar、LINE 分享
+- 預算追蹤、付款狀態與預約編號
+- 訂房、航班、票券與重要文件集中備註
 
 ### 目前未完成但優先度高
 
 - Phase 9：拆分 `app/page.tsx`，降低後續維護成本
-- Phase 6：預算與旅行資訊管理
 - Phase 9：持續拆分匯出、分享、storage 邏輯
 
 ### 驗證狀態
@@ -65,7 +67,7 @@
 - 大部分功能集中在單一 `app/page.tsx`，後續維護成本會上升
 - API 錯誤提示已有基礎，但載入狀態與空狀態仍可再細緻化
 - 手機版已具備行程/地圖切換，但 PWA 與離線能力尚未補齊
-- 缺少預算、AI 自動規劃、進階日曆匯出與協作同步等進階能力
+- 缺少 AI 自動規劃、協作同步等進階能力
 
 ## Phase 1：基礎穩定與資料保存（已完成）
 
@@ -305,35 +307,50 @@
 
 - 無
 
-## Phase 6：預算與旅行資訊管理
+## Phase 6：預算與旅行資訊管理（已完成）
 
 目標：將系統從「路線規劃器」升級為「完整旅行規劃器」。
 
 ### 建議功能
 
-- 每個景點加入預估費用
-- 餐費、交通、住宿、門票分類
-- 每日預算統計
-- 全旅程預算統計
-- 幣別設定
-- 付款狀態
-- 訂房資訊
-- 航班資訊
-- 票券與預約編號
-- 重要文件備註
+- 每個景點加入預估費用（本階段實作）
+- 餐費、交通、住宿、門票分類（本階段實作）
+- 每日預算統計（本階段實作）
+- 全旅程預算統計（本階段實作）
+- 幣別設定（本階段實作）
+- 付款狀態（本階段實作）
+- 訂房資訊（本階段實作）
+- 航班資訊（本階段實作）
+- 票券與預約編號（本階段實作）
+- 重要文件備註（本階段實作）
 
 ### 技術調整
 
-- 擴充 itinerary data model
-- 建立 `components/BudgetPanel.tsx`
-- 建立 `components/BookingPanel.tsx`
-- localStorage schema 加版本管理
+- 擴充 itinerary data model（本階段實作）
+- 建立 `components/BudgetPanel.tsx`（本階段實作）
+- 建立 `components/BookingPanel.tsx`（本階段實作）
+- localStorage schema 加版本管理（本階段實作）
 
 ### 驗收標準
 
 - 使用者可追蹤每日與總預算
 - 重要訂位/訂房/票券資訊可集中管理
 - 舊版 localStorage 資料升級時不會壞掉
+
+### 完成紀錄
+
+- 已在 `ItineraryItem` 增加 `cost`、`costCategory`、`paymentStatus`、`reservationCode`
+- 已新增 `TripInfo` 與 `TripBookingInfo`，集中管理幣別、總預算、訂房、航班、票券、文件與緊急聯絡
+- 已建立 `components/BudgetPanel.tsx`，顯示每日預算、全旅程預算、剩餘預算與分類統計
+- 已建立 `components/BookingPanel.tsx`，集中編輯住宿、航班、票券預約與重要文件備註
+- 已在景點卡片加入費用、分類、付款狀態與票券/預約編號欄位
+- 已將 localStorage schema 升級為 version 2，並保留舊資料讀取相容
+- 已將費用與預約編號納入文字摘要、CSV 與 Excel 匯出
+- 已執行靜態差異檢查；目前 shell 找不到 `node` / `npm`，`tsc` 也因缺少 `node` 無法啟動，尚無法執行 Next.js 建置驗證
+
+### 尚未完成項目
+
+- 無
 
 ## Phase 7：AI 智慧規劃
 
@@ -473,13 +490,12 @@ types/
 
 ## 建議開發順序
 
-目前 Phase 1、Phase 2、Phase 3、Phase 4、Phase 5 已完成。後續建議順序如下：
+目前 Phase 1、Phase 2、Phase 3、Phase 4、Phase 5、Phase 6 已完成。後續建議順序如下：
 
 1. Phase 9：繼續拆分行程卡片、地圖、分享與 storage 邏輯
-2. Phase 6：預算與旅行資訊管理
-3. Phase 7：AI 智慧規劃
-4. Phase 8：協作與雲端同步
-5. Phase 9：補時間計算單元測試
+2. Phase 7：AI 智慧規劃
+3. Phase 8：協作與雲端同步
+4. Phase 9：補時間計算單元測試
 
 若以長期產品化為目標，建議下一輪持續做 Phase 9 重構，避免 `app/page.tsx` 再度膨脹。
 

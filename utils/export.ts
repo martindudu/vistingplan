@@ -19,8 +19,10 @@ export const buildTextSummary = (days: DayPlan[]) => {
         const slot = daySchedule[idx]
         const stay = formatMinutes(item.stayDuration || 60)
         const travel = item.travelTime ? `｜下一站 ${item.travelTime}` : ''
+        const cost = item.cost ? `｜費用 ${item.cost}` : ''
+        const reservation = item.reservationCode ? `\n  編號：${item.reservationCode}` : ''
         const note = item.notes ? `\n  備註：${item.notes}` : ''
-        return `${idx + 1}. ${slot?.start || ''}-${slot?.end || ''} ${item.name}｜停留 ${stay}${travel}\n  ${item.address}${note}`
+        return `${idx + 1}. ${slot?.start || ''}-${slot?.end || ''} ${item.name}｜停留 ${stay}${travel}${cost}\n  ${item.address}${reservation}${note}`
       }),
     ].filter(Boolean)
     return lines.join('\n')
@@ -33,13 +35,13 @@ export const buildLineShareText = (days: DayPlan[]) => {
 }
 
 export const buildCsv = (days: DayPlan[]) => {
-  const header = ['Day', 'Date', 'Start', 'End', 'Place', 'Address', 'StayMinutes', 'TravelToNext', 'Notes']
+  const header = ['Day', 'Date', 'Start', 'End', 'Place', 'Address', 'StayMinutes', 'TravelToNext', 'Cost', 'Category', 'Payment', 'ReservationCode', 'Notes']
   const rows = buildExportRows(days)
   return [header, ...rows].map(row => row.map(csvCell).join(',')).join('\n')
 }
 
 export const buildXlsxBlob = (days: DayPlan[]) => {
-  const header = ['Day', 'Date', 'Start', 'End', 'Place', 'Address', 'StayMinutes', 'TravelToNext', 'Notes']
+  const header = ['Day', 'Date', 'Start', 'End', 'Place', 'Address', 'StayMinutes', 'TravelToNext', 'Cost', 'Category', 'Payment', 'ReservationCode', 'Notes']
   const rows = [header, ...buildExportRows(days)]
   const sheetRows = rows.map((row, rowIdx) => {
     const cells = row.map((value, colIdx) => {
@@ -125,6 +127,10 @@ export const encodeSharePayload = async (days: DayPlan[], travelMode: string) =>
         no: item.notes,
         sd: item.stayDuration,
         ty: item.type,
+        c: item.cost,
+        cc: item.costCategory,
+        ps: item.paymentStatus,
+        rc: item.reservationCode,
       })),
     })),
     m: travelMode,
@@ -166,6 +172,10 @@ const buildExportRows = (days: DayPlan[]): ExportRow[] => {
       item.address,
       item.stayDuration || 60,
       item.travelTime || '',
+      item.cost || '',
+      item.costCategory || '',
+      item.paymentStatus || '',
+      item.reservationCode || '',
       item.notes || '',
     ])
   })

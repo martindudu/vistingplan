@@ -4,6 +4,8 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { GoogleMap, LoadScript, Marker, DirectionsRenderer, Autocomplete, StreetViewPanorama } from '@react-google-maps/api'
 import html2canvas from 'html2canvas'
 import dynamic from 'next/dynamic'
+import BookingPanel from '../components/BookingPanel'
+import BudgetPanel from '../components/BudgetPanel'
 import ExportDialog from '../components/ExportDialog'
 import PosterRender from '../components/PosterRender'
 import {
@@ -23,7 +25,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import type { DayPlan, ItineraryItem } from '../types/itinerary'
+import type { DayPlan, ExpenseCategory, ItineraryItem, PaymentStatus, TripInfo } from '../types/itinerary'
 import { buildCsv, buildGoogleCalendarUrl, buildIcs, buildLineShareText, buildTextSummary, buildXlsxBlob, decodeSharePayload, encodeSharePayload, type PosterTemplate } from '../utils/export'
 import { buildSchedule, crossesTimeWindow, formatMinutes, getWeekdayIndex, isWithinOpeningHours, parseDur, weekdayToGoogleIndex } from '../utils/time'
 
@@ -51,8 +53,25 @@ interface ToastMessage {
 }
 
 const STORAGE_KEY = 'travel-architect-plan-v1'
+const STORAGE_VERSION = 2
 
 const defaultCenter = { lat: 25.0330, lng: 121.5654 }
+const defaultTripInfo: TripInfo = { currency: 'TWD', booking: {} }
+
+const expenseCategories: Array<{ value: ExpenseCategory, label: string }> = [
+  { value: 'meal', label: '餐費' },
+  { value: 'transport', label: '交通' },
+  { value: 'lodging', label: '住宿' },
+  { value: 'ticket', label: '門票' },
+  { value: 'shopping', label: '購物' },
+  { value: 'other', label: '其他' },
+]
+
+const paymentStatuses: Array<{ value: PaymentStatus, label: string }> = [
+  { value: 'unpaid', label: '未付款' },
+  { value: 'reserved', label: '已預約' },
+  { value: 'paid', label: '已付款' },
+]
 
 // --- Icons ---
 const IconMagic = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 4V2m0 12v-2M8 10H6m12 0h-2M9 4.5 7.5 3m10.5 10.5L16.5 12m-9 0L6 13.5M18 4.5 16.5 6"></path><path d="m3 21 9-9 3 3-9 9z"></path></svg>)
@@ -108,6 +127,28 @@ function SortableItem({ item, days, activeDayId, onDelete, onUpdate, onMoveToDay
               {[30, 60, 90, 120, 180, 240].map(v => <option key={v} value={v} style={{ color: '#000' }}>{v >= 60 ? `${v/60} 小時` : `${v} 分鐘`}</option>)}
             </select>
           </div>
+          <div className="item-budget-tools" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
+            <label>
+              <span>費用</span>
+              <input type="number" min="0" value={item.cost || ''} onChange={(e) => onUpdate(item.id, { cost: Number(e.target.value) || undefined })} placeholder="0" />
+            </label>
+            <label>
+              <span>分類</span>
+              <select value={item.costCategory || 'other'} onChange={(e) => onUpdate(item.id, { costCategory: e.target.value as ExpenseCategory })}>
+                {expenseCategories.map(category => <option key={category.value} value={category.value}>{category.label}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>付款</span>
+              <select value={item.paymentStatus || 'unpaid'} onChange={(e) => onUpdate(item.id, { paymentStatus: e.target.value as PaymentStatus })}>
+                {paymentStatuses.map(status => <option key={status.value} value={status.value}>{status.label}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>編號</span>
+              <input value={item.reservationCode || ''} onChange={(e) => onUpdate(item.id, { reservationCode: e.target.value })} placeholder="票券/預約" />
+            </label>
+          </div>
           <textarea placeholder="新增備註..." value={item.notes || ''} onClick={(e) => e.stopPropagation()} onChange={(e) => onUpdate(item.id, { notes: e.target.value })} style={{ width: '100%', fontSize: '0.8rem', border: 'none', background: 'rgba(255,255,255,0.05)', color: '#fff', borderRadius: '8px', padding: '8px', resize: 'none', fontFamily: 'inherit' }} rows={2} />
           {otherDays.length > 0 && (
             <div className="item-day-tools" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
@@ -132,6 +173,7 @@ function SortableItem({ item, days, activeDayId, onDelete, onUpdate, onMoveToDay
 function HomeContent() {
   const [searchQuery, setSearchQuery] = useState('')
   const [days, setDays] = useState<DayPlan[]>([{ id: 'day-1', title: 'Day 1', items: [], startTime: '09:00', date: new Date().toISOString().slice(0, 10) }])
+  const [tripInfo, setTripInfo] = useState<TripInfo>(defaultTripInfo)
   const [activeDayId, setActiveDayId] = useState('day-1')
   const [mapCenter, setMapCenter] = useState(defaultCenter)
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null)
@@ -171,6 +213,10 @@ function HomeContent() {
 
   const activeDay = days.find(d => d.id === activeDayId) || days[0]
   const itinerary = activeDay.items
+
+  const updateTripInfo = useCallback((updates: Partial<TripInfo>) => {
+    setTripInfo(prev => ({ ...prev, ...updates, booking: updates.booking || prev.booking }))
+  }, [])
 
   const updateActiveDay = useCallback((updates: Partial<DayPlan>) => {
     setDays(prev => prev.map(d => d.id === activeDayId ? { ...d, ...updates } : d))
@@ -486,7 +532,7 @@ function HomeContent() {
         let loadedFromPlan = false
         try {
           const decoded = await decodeSharePayload(planData)
-          setDays(decoded.d.map((day: any, idx: number) => ({ id: `day-${idx + 1}`, title: day.t, startTime: day.s || '09:00', date: day.dt, notes: day.no, items: day.i.map((item: any) => ({ id: item.p, name: item.n, address: item.a, lat: item.lt, lng: item.lg, notes: item.no, stayDuration: item.sd, type: item.ty })) })))
+          setDays(decoded.d.map((day: any, idx: number) => ({ id: `day-${idx + 1}`, title: day.t, startTime: day.s || '09:00', date: day.dt, notes: day.no, items: day.i.map((item: any) => ({ id: item.p, name: item.n, address: item.a, lat: item.lt, lng: item.lg, notes: item.no, stayDuration: item.sd, type: item.ty, cost: item.c, costCategory: item.cc, paymentStatus: item.ps, reservationCode: item.rc })) })))
           setActiveDayId('day-1')
           setTravelMode(decoded.m || 'DRIVING')
           window.history.replaceState({}, '', window.location.pathname)
@@ -510,6 +556,7 @@ function HomeContent() {
             setDays(decoded.days)
             setActiveDayId(decoded.activeDayId || decoded.days[0].id)
             setTravelMode(decoded.travelMode || 'DRIVING')
+            setTripInfo({ ...defaultTripInfo, ...(decoded.tripInfo || {}), booking: decoded.tripInfo?.booking || {} })
             showToast('已復原上次編輯的行程。', 'success')
           }
         }
@@ -526,11 +573,11 @@ function HomeContent() {
   useEffect(() => {
     if (!hasRestored) return
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ days, activeDayId, travelMode }))
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: STORAGE_VERSION, days, activeDayId, travelMode, tripInfo }))
     } catch (e) {
       showToast('本機自動儲存失敗，請確認瀏覽器儲存空間。', 'error')
     }
-  }, [days, activeDayId, travelMode, hasRestored, showToast])
+  }, [days, activeDayId, travelMode, tripInfo, hasRestored, showToast])
 
   useEffect(() => {
     if (!apiKey) showToast('尚未設定 Google Maps API Key，地圖與搜尋功能可能無法使用。', 'error')
@@ -572,6 +619,7 @@ function HomeContent() {
     if (!window.confirm('確定要清空所有行程嗎？')) return
     const freshDay = { id: 'day-1', title: 'Day 1', items: [], startTime: '09:00', date: new Date().toISOString().slice(0, 10) }
     setDays([freshDay])
+    setTripInfo(defaultTripInfo)
     setActiveDayId(freshDay.id)
     setDirections(null)
     setDiscoveryResults([])
@@ -846,6 +894,8 @@ function HomeContent() {
               <button onClick={() => insertMealBreak('dinner')}>插入晚餐</button>
             </div>
           </div>
+          <BudgetPanel days={days} activeDayId={activeDayId} tripInfo={tripInfo} onTripInfoChange={updateTripInfo} />
+          <BookingPanel booking={tripInfo.booking} onChange={(booking) => updateTripInfo({ booking })} />
           <div className="itinerary-scroll-area">{itinerary.length === 0 ? <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.3)' }}>暫無行程</div> : (<DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}><SortableContext items={itinerary.map(i => i.id)} strategy={verticalListSortingStrategy}>{itinerary.map((item, idx) => (<SortableItem key={item.id} item={item} days={days} activeDayId={activeDayId} onUpdate={handleUpdateItem} onMoveToDay={moveItemToDay} onCopyToDay={copyItemToDay} onDelete={(id) => { const updated = itinerary.filter(i => i.id !== id); updateActiveDayItems(updated); calculateRoute(updated); }} onPeek={(lat, lng) => { setStreetViewPos({lat, lng}); setShowStreetView(true); }} startTime={schedule[idx]?.start} endTime={schedule[idx]?.end} />))}</SortableContext></DndContext>)}</div>
           <div className="action-bar">{days.some(day => day.items.length > 0) && <button className="btn-outline" onClick={clearAllPlans} disabled={loading} style={{ flex: 1 }}><IconTrash /> 清空</button>}{itinerary.length >= 3 && <button className="btn-outline" onClick={optimize} disabled={loading} style={{ flex: 1 }}><IconMagic /> 智慧排序</button>}{itinerary.length > 0 && <button className="btn-primary" onClick={openNavigation} style={{ flex: 2 }}><IconNavigation /> 開始導航</button>}</div>
         </aside>

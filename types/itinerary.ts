@@ -8,6 +8,10 @@ export interface Place {
 
 export interface ItineraryItem extends Place {
   type?: 'place' | 'meal' | 'note'
+  cost?: number
+  costCategory?: ExpenseCategory
+  paymentStatus?: PaymentStatus
+  reservationCode?: string
   travelTime?: string
   photoUrl?: string
   rating?: number
@@ -25,4 +29,24 @@ export interface DayPlan {
   startTime?: string
   date?: string
   notes?: string
+}
+
+export type ExpenseCategory = 'meal' | 'transport' | 'lodging' | 'ticket' | 'shopping' | 'other'
+
+export type PaymentStatus = 'unpaid' | 'paid' | 'reserved'
+
+export interface TripBookingInfo {
+  accommodation?: string
+  accommodationAddress?: string
+  accommodationCode?: string
+  flightInfo?: string
+  ticketInfo?: string
+  documentNotes?: string
+  emergencyContact?: string
+}
+
+export interface TripInfo {
+  currency: string
+  budgetLimit?: number
+  booking: TripBookingInfo
 }
