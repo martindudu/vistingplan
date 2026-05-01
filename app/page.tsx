@@ -1,12 +1,14 @@
 'use client'
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
-import { GoogleMap, LoadScript, Marker, DirectionsRenderer, Autocomplete, StreetViewPanorama } from '@react-google-maps/api'
+import { LoadScript, Autocomplete } from '@react-google-maps/api'
 import html2canvas from 'html2canvas'
 import dynamic from 'next/dynamic'
 import BookingPanel from '../components/BookingPanel'
 import BudgetPanel from '../components/BudgetPanel'
 import ExportDialog from '../components/ExportDialog'
+import ItineraryCard from '../components/ItineraryItem'
+import MapView from '../components/MapView'
 import PosterRender from '../components/PosterRender'
 import {
   DndContext,
@@ -21,21 +23,16 @@ import {
   arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
-  useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
-import type { DayPlan, ExpenseCategory, ItineraryItem, PaymentStatus, TripInfo } from '../types/itinerary'
-import { buildCsv, buildGoogleCalendarUrl, buildIcs, buildLineShareText, buildTextSummary, buildXlsxBlob, decodeSharePayload, encodeSharePayload, type PosterTemplate } from '../utils/export'
+import { useItinerary } from '../hooks/useItinerary'
+import type { ItineraryItem, TripInfo } from '../types/itinerary'
+import { buildCsv, buildGoogleCalendarUrl, buildIcs, buildLineShareText, buildTextSummary, buildXlsxBlob, type PosterTemplate } from '../utils/export'
+import { buildShareLink, parseSharePlan } from '../utils/share'
+import { createDefaultDay, defaultTripInfo, parseStoredPlan, serializePlan, STORAGE_KEY } from '../utils/storage'
+import { applyRouteTravelTimes } from '../utils/routes'
 import { buildSchedule, crossesTimeWindow, formatMinutes, getWeekdayIndex, isWithinOpeningHours, parseDur, weekdayToGoogleIndex } from '../utils/time'
-
-const getWeatherIcon = (code?: number) => {
-  if (code === undefined) return '☀️'
-  if (code === 0) return '☀️'
-  if (code < 4) return '☁️'
-  if (code < 70) return '🌧️'
-  return '❄️'
-}
+import { buildDayWarnings } from '../utils/validation'
 
 type ToastType = 'success' | 'error' | 'info'
 type MobileView = 'plan' | 'map'
@@ -52,129 +49,22 @@ interface ToastMessage {
   message: string
 }
 
-const STORAGE_KEY = 'travel-architect-plan-v1'
-const STORAGE_VERSION = 2
-
 const defaultCenter = { lat: 25.0330, lng: 121.5654 }
-const defaultTripInfo: TripInfo = { currency: 'TWD', booking: {} }
-
-const expenseCategories: Array<{ value: ExpenseCategory, label: string }> = [
-  { value: 'meal', label: '餐費' },
-  { value: 'transport', label: '交通' },
-  { value: 'lodging', label: '住宿' },
-  { value: 'ticket', label: '門票' },
-  { value: 'shopping', label: '購物' },
-  { value: 'other', label: '其他' },
-]
-
-const paymentStatuses: Array<{ value: PaymentStatus, label: string }> = [
-  { value: 'unpaid', label: '未付款' },
-  { value: 'reserved', label: '已預約' },
-  { value: 'paid', label: '已付款' },
-]
 
 // --- Icons ---
 const IconMagic = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 4V2m0 12v-2M8 10H6m12 0h-2M9 4.5 7.5 3m10.5 10.5L16.5 12m-9 0L6 13.5M18 4.5 16.5 6"></path><path d="m3 21 9-9 3 3-9 9z"></path></svg>)
 const IconNavigation = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"></polygon></svg>)
-const IconClock = () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>)
 const IconTrash = () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>)
 const IconCar = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"></path><circle cx="7" cy="17" r="2"></circle><path d="M9 17h6"></path><circle cx="17" cy="17" r="2"></circle></svg>)
 const IconWalk = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 1.5-4 1.5 4"></path><path d="M10.5 14V8"></path><circle cx="10.5" cy="4.5" r="1.5"></circle><path d="M7 11h7"></path></svg>)
 const IconTrain = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="16" height="16" x="4" y="2" rx="2"></rect><path d="M4 11h16"></path><path d="M12 2v16"></path><path d="m8 22 2-4"></path><path d="m16 22-2-4"></path></svg>)
 const IconShare = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg>)
 const IconSparkles = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path><path d="M5 3v4"></path><path d="M19 17v4"></path><path d="M3 5h4"></path><path d="M17 19h4"></path></svg>)
-const IconEye = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>)
-const IconImage = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"></rect><circle cx="9" cy="9" r="2"></circle><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path></svg>)
-
-function SortableItem({ item, days, activeDayId, onDelete, onUpdate, onMoveToDay, onCopyToDay, onPeek, startTime, endTime }: { item: ItineraryItem, days: DayPlan[], activeDayId: string, onDelete: (id: string) => void, onUpdate: (id: string, updates: Partial<ItineraryItem>) => void, onMoveToDay: (id: string, targetDayId: string) => void, onCopyToDay: (id: string, targetDayId: string) => void, onPeek: (lat: number, lng: number) => void, startTime?: string, endTime?: string }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id })
-  const style = { transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 100 : 1 }
-  const otherDays = days.filter(day => day.id !== activeDayId)
-
-  return (
-    <div ref={setNodeRef} style={style} className={`itinerary-item ${isDragging ? 'dragging' : ''}`} {...attributes} {...listeners}>
-      <div className="card-accent" />
-      {item.photoUrl && (<div className="item-photo-box"><img src={item.photoUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /></div>)}
-      <div className="item-details">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <div>
-            {startTime && <div style={{ fontSize: '0.75rem', fontWeight: '800', color: 'var(--accent)', marginBottom: '4px' }}>{startTime} - {endTime}</div>}
-            <div className="item-title-row">
-              <h3 className="item-name">{item.name}</h3>
-              {item.type && item.type !== 'place' && <span className={`item-type-badge ${item.type}`}>{item.type === 'meal' ? '用餐' : '備忘'}</span>}
-            </div>
-            {item.type !== 'note' && (
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px' }}>
-                <button className="btn-peek" onClick={(e) => { e.stopPropagation(); onPeek(item.lat, item.lng); }} style={{ padding: '4px 10px', fontSize: '0.7rem', width: 'auto', gap: '4px' }}>
-                  <IconEye /> 街景
-                </button>
-              </div>
-            )}
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
-            <button className="delete-button" onClick={(e) => { e.stopPropagation(); onDelete(item.id); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.2)' }}><IconTrash /></button>
-            {item.weather && (
-              <div className="weather-tag">
-                {getWeatherIcon(item.weather.code)} {item.weather.temp}°C
-              </div>
-            )}
-          </div>
-        </div>
-        <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)', fontWeight: '600' }}>停留:</span>
-            <select value={item.stayDuration || 60} onClick={(e) => e.stopPropagation()} onChange={(e) => onUpdate(item.id, { stayDuration: parseInt(e.target.value) })} style={{ fontSize: '0.75rem', border: '1px solid var(--glass-border)', borderRadius: '4px', padding: '2px 4px', background: 'transparent', color: '#fff' }}>
-              {[30, 60, 90, 120, 180, 240].map(v => <option key={v} value={v} style={{ color: '#000' }}>{v >= 60 ? `${v/60} 小時` : `${v} 分鐘`}</option>)}
-            </select>
-          </div>
-          <div className="item-budget-tools" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
-            <label>
-              <span>費用</span>
-              <input type="number" min="0" value={item.cost || ''} onChange={(e) => onUpdate(item.id, { cost: Number(e.target.value) || undefined })} placeholder="0" />
-            </label>
-            <label>
-              <span>分類</span>
-              <select value={item.costCategory || 'other'} onChange={(e) => onUpdate(item.id, { costCategory: e.target.value as ExpenseCategory })}>
-                {expenseCategories.map(category => <option key={category.value} value={category.value}>{category.label}</option>)}
-              </select>
-            </label>
-            <label>
-              <span>付款</span>
-              <select value={item.paymentStatus || 'unpaid'} onChange={(e) => onUpdate(item.id, { paymentStatus: e.target.value as PaymentStatus })}>
-                {paymentStatuses.map(status => <option key={status.value} value={status.value}>{status.label}</option>)}
-              </select>
-            </label>
-            <label>
-              <span>編號</span>
-              <input value={item.reservationCode || ''} onChange={(e) => onUpdate(item.id, { reservationCode: e.target.value })} placeholder="票券/預約" />
-            </label>
-          </div>
-          <textarea placeholder="新增備註..." value={item.notes || ''} onClick={(e) => e.stopPropagation()} onChange={(e) => onUpdate(item.id, { notes: e.target.value })} style={{ width: '100%', fontSize: '0.8rem', border: 'none', background: 'rgba(255,255,255,0.05)', color: '#fff', borderRadius: '8px', padding: '8px', resize: 'none', fontFamily: 'inherit' }} rows={2} />
-          {otherDays.length > 0 && (
-            <div className="item-day-tools" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
-              <select defaultValue="" aria-label="移動景點到其他天" onChange={(e) => { if (e.target.value) { onMoveToDay(item.id, e.target.value); e.target.value = '' } }}>
-                <option value="">移到...</option>
-                {otherDays.map(day => <option key={day.id} value={day.id}>{day.title}</option>)}
-              </select>
-              <select defaultValue="" aria-label="複製景點到其他天" onChange={(e) => { if (e.target.value) { onCopyToDay(item.id, e.target.value); e.target.value = '' } }}>
-                <option value="">複製到...</option>
-                {otherDays.map(day => <option key={day.id} value={day.id}>{day.title}</option>)}
-              </select>
-            </div>
-          )}
-        </div>
-        {item.travelTime && (<div className="travel-badge"><IconClock /> 下一站: {item.travelTime}</div>)}
-        {item.openingHours?.[0] && <div className="opening-hours">營業時間：{item.openingHours[0]}</div>}
-      </div>
-    </div>
-  )
-}
 
 function HomeContent() {
   const [searchQuery, setSearchQuery] = useState('')
-  const [days, setDays] = useState<DayPlan[]>([{ id: 'day-1', title: 'Day 1', items: [], startTime: '09:00', date: new Date().toISOString().slice(0, 10) }])
+  const { days, setDays, activeDay, activeDayId, setActiveDayId, itinerary, updateActiveDay, updateDayItems, updateActiveDayItems } = useItinerary()
   const [tripInfo, setTripInfo] = useState<TripInfo>(defaultTripInfo)
-  const [activeDayId, setActiveDayId] = useState('day-1')
   const [mapCenter, setMapCenter] = useState(defaultCenter)
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null)
   const [loading, setLoading] = useState(false)
@@ -211,24 +101,9 @@ function HomeContent() {
     }, 3600)
   }, [])
 
-  const activeDay = days.find(d => d.id === activeDayId) || days[0]
-  const itinerary = activeDay.items
-
   const updateTripInfo = useCallback((updates: Partial<TripInfo>) => {
     setTripInfo(prev => ({ ...prev, ...updates, booking: updates.booking || prev.booking }))
   }, [])
-
-  const updateActiveDay = useCallback((updates: Partial<DayPlan>) => {
-    setDays(prev => prev.map(d => d.id === activeDayId ? { ...d, ...updates } : d))
-  }, [activeDayId])
-
-  const updateDayItems = useCallback((dayId: string, newItems: ItineraryItem[]) => {
-    setDays(prev => prev.map(d => d.id === dayId ? { ...d, items: newItems } : d))
-  }, [])
-
-  const updateActiveDayItems = useCallback((newItems: ItineraryItem[]) => {
-    updateDayItems(activeDayId, newItems)
-  }, [activeDayId, updateDayItems])
 
   const handleUpdateItem = useCallback((id: string, updates: Partial<ItineraryItem>) => {
     updateActiveDayItems(itinerary.map(i => i.id === id ? { ...i, ...updates } : i))
@@ -241,20 +116,10 @@ function HomeContent() {
   }, [activeDay])
 
   const itinerarySummary = useMemo(() => {
-    const totalStay = itinerary.reduce((sum, item) => sum + (item.stayDuration || 60), 0)
-    const totalTravel = itinerary.reduce((sum, item) => sum + (item.travelTime ? parseDur(item.travelTime) : 0), 0)
+    const validation = buildDayWarnings(activeDay)
     const endTime = schedule[schedule.length - 1]?.end || activeDay.startTime || '09:00'
-    const daySpan = schedule.length ? totalStay + totalTravel : 0
-    const textForMealCheck = itinerary.map(item => `${item.name} ${item.notes || ''}`).join(' ')
-    const hasMealStop = /(餐|食|飯|咖啡|茶|restaurant|cafe|lunch|dinner)/i.test(textForMealCheck)
     const googleWeekday = weekdayToGoogleIndex(getWeekdayIndex(activeDay.date))
-    const warnings: string[] = []
-
-    if (itinerary.length >= 6) warnings.push('今日景點偏多，建議保留交通緩衝。')
-    if (daySpan > 720) warnings.push('今日行程超過 12 小時，可能會太緊。')
-    if (itinerary.length >= 2 && totalTravel === 0) warnings.push('路線時間尚未完整計算，總時長可能偏低。')
-    if (!hasMealStop && schedule.some(slot => crossesTimeWindow(slot.start, slot.end, 720, 810))) warnings.push('行程跨過午餐時段，可考慮安排用餐。')
-    if (!hasMealStop && schedule.some(slot => crossesTimeWindow(slot.start, slot.end, 1080, 1170))) warnings.push('行程跨過晚餐時段，可考慮安排用餐。')
+    const warnings = [...validation.warnings]
     itinerary.forEach((item, idx) => {
       const openingText = item.openingHours?.[googleWeekday]
       if (openingText && !isWithinOpeningHours(schedule[idx]?.start, openingText)) {
@@ -262,8 +127,8 @@ function HomeContent() {
       }
     })
 
-    return { totalStay, totalTravel, endTime, daySpan, warnings }
-  }, [itinerary, schedule, activeDay.startTime, activeDay.date])
+    return { ...validation, endTime, warnings }
+  }, [activeDay, itinerary, schedule])
 
   const overviewDays = useMemo(() => {
     return days.map(day => {
@@ -348,9 +213,8 @@ function HomeContent() {
       })
     })
     if (res) {
-      setDirections(res); const updatedItems = [...items]
-      res.routes[0].legs.forEach((leg, i) => { if (updatedItems[i]) updatedItems[i].travelTime = leg.duration?.text })
-      updateDayItems(dayId, updatedItems)
+      setDirections(res)
+      updateDayItems(dayId, applyRouteTravelTimes(items, res.routes[0].legs))
     }
   }, [travelMode, activeDayId, updateDayItems, showToast])
 
@@ -367,8 +231,7 @@ function HomeContent() {
     })
     if (res) {
       const order = res.routes[0].waypoint_order; const middle = itinerary.slice(1, -1); const optimized = [itinerary[0], ...order.map(i => middle[i]), itinerary[itinerary.length - 1]]
-      res.routes[0].legs.forEach((leg, i) => { optimized[i].travelTime = leg.duration?.text })
-      updateActiveDayItems(optimized); setDirections(res); showToast('已依目前交通方式重新排序行程。', 'success')
+      updateActiveDayItems(applyRouteTravelTimes(optimized, res.routes[0].legs)); setDirections(res); showToast('已依目前交通方式重新排序行程。', 'success')
     }
     setLoading(false)
   }
@@ -383,8 +246,7 @@ function HomeContent() {
 
   const generateShareLink = async () => {
     try {
-      const encoded = await encodeSharePayload(days, travelMode)
-      return `${window.location.origin}${window.location.pathname}?plan=${encoded}`
+      return await buildShareLink(window.location.origin, window.location.pathname, days, travelMode)
     } catch (e) { return null }
   }
 
@@ -531,7 +393,7 @@ function HomeContent() {
       if (planData) {
         let loadedFromPlan = false
         try {
-          const decoded = await decodeSharePayload(planData)
+          const decoded = await parseSharePlan(planData)
           setDays(decoded.d.map((day: any, idx: number) => ({ id: `day-${idx + 1}`, title: day.t, startTime: day.s || '09:00', date: day.dt, notes: day.no, items: day.i.map((item: any) => ({ id: item.p, name: item.n, address: item.a, lat: item.lt, lng: item.lg, notes: item.no, stayDuration: item.sd, type: item.ty, cost: item.c, costCategory: item.cc, paymentStatus: item.ps, reservationCode: item.rc })) })))
           setActiveDayId('day-1')
           setTravelMode(decoded.m || 'DRIVING')
@@ -549,16 +411,13 @@ function HomeContent() {
       }
 
       try {
-        const saved = window.localStorage.getItem(STORAGE_KEY)
-        if (saved) {
-          const decoded = JSON.parse(saved)
-          if (Array.isArray(decoded.days) && decoded.days.length > 0) {
-            setDays(decoded.days)
-            setActiveDayId(decoded.activeDayId || decoded.days[0].id)
-            setTravelMode(decoded.travelMode || 'DRIVING')
-            setTripInfo({ ...defaultTripInfo, ...(decoded.tripInfo || {}), booking: decoded.tripInfo?.booking || {} })
-            showToast('已復原上次編輯的行程。', 'success')
-          }
+        const decoded = parseStoredPlan(window.localStorage.getItem(STORAGE_KEY))
+        if (decoded) {
+          setDays(decoded.days)
+          setActiveDayId(decoded.activeDayId)
+          setTravelMode(decoded.travelMode)
+          setTripInfo(decoded.tripInfo)
+          showToast('已復原上次編輯的行程。', 'success')
         }
       } catch (e) {
         showToast('本機行程資料讀取失敗，已使用新的空白行程。', 'error')
@@ -573,7 +432,7 @@ function HomeContent() {
   useEffect(() => {
     if (!hasRestored) return
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: STORAGE_VERSION, days, activeDayId, travelMode, tripInfo }))
+      window.localStorage.setItem(STORAGE_KEY, serializePlan(days, activeDayId, travelMode, tripInfo))
     } catch (e) {
       showToast('本機自動儲存失敗，請確認瀏覽器儲存空間。', 'error')
     }
@@ -617,7 +476,7 @@ function HomeContent() {
 
   const clearAllPlans = () => {
     if (!window.confirm('確定要清空所有行程嗎？')) return
-    const freshDay = { id: 'day-1', title: 'Day 1', items: [], startTime: '09:00', date: new Date().toISOString().slice(0, 10) }
+    const freshDay = createDefaultDay()
     setDays([freshDay])
     setTripInfo(defaultTripInfo)
     setActiveDayId(freshDay.id)
@@ -896,20 +755,18 @@ function HomeContent() {
           </div>
           <BudgetPanel days={days} activeDayId={activeDayId} tripInfo={tripInfo} onTripInfoChange={updateTripInfo} />
           <BookingPanel booking={tripInfo.booking} onChange={(booking) => updateTripInfo({ booking })} />
-          <div className="itinerary-scroll-area">{itinerary.length === 0 ? <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.3)' }}>暫無行程</div> : (<DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}><SortableContext items={itinerary.map(i => i.id)} strategy={verticalListSortingStrategy}>{itinerary.map((item, idx) => (<SortableItem key={item.id} item={item} days={days} activeDayId={activeDayId} onUpdate={handleUpdateItem} onMoveToDay={moveItemToDay} onCopyToDay={copyItemToDay} onDelete={(id) => { const updated = itinerary.filter(i => i.id !== id); updateActiveDayItems(updated); calculateRoute(updated); }} onPeek={(lat, lng) => { setStreetViewPos({lat, lng}); setShowStreetView(true); }} startTime={schedule[idx]?.start} endTime={schedule[idx]?.end} />))}</SortableContext></DndContext>)}</div>
+          <div className="itinerary-scroll-area">{itinerary.length === 0 ? <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.3)' }}>暫無行程</div> : (<DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}><SortableContext items={itinerary.map(i => i.id)} strategy={verticalListSortingStrategy}>{itinerary.map((item, idx) => (<ItineraryCard key={item.id} item={item} days={days} activeDayId={activeDayId} onUpdate={handleUpdateItem} onMoveToDay={moveItemToDay} onCopyToDay={copyItemToDay} onDelete={(id) => { const updated = itinerary.filter(i => i.id !== id); updateActiveDayItems(updated); calculateRoute(updated); }} onPeek={(lat, lng) => { setStreetViewPos({lat, lng}); setShowStreetView(true); }} startTime={schedule[idx]?.start} endTime={schedule[idx]?.end} />))}</SortableContext></DndContext>)}</div>
           <div className="action-bar">{days.some(day => day.items.length > 0) && <button className="btn-outline" onClick={clearAllPlans} disabled={loading} style={{ flex: 1 }}><IconTrash /> 清空</button>}{itinerary.length >= 3 && <button className="btn-outline" onClick={optimize} disabled={loading} style={{ flex: 1 }}><IconMagic /> 智慧排序</button>}{itinerary.length > 0 && <button className="btn-primary" onClick={openNavigation} style={{ flex: 2 }}><IconNavigation /> 開始導航</button>}</div>
         </aside>
-        <section className="map-viewport">
-          <GoogleMap
-            mapContainerStyle={{ width: '100%', height: '100%' }} center={mapCenter} zoom={12}
-            onLoad={(map) => { mapRef.current = map; if (typeof google !== 'undefined') directionsServiceRef.current = new google.maps.DirectionsService(); }}
-            options={{ disableDefaultUI: true, styles: [{ elementType: "geometry", stylers: [{ color: "#242f3e" }] }, { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] }, { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] }, { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "#d59563" }] }, { featureType: "poi", elementType: "labels.text.fill", stylers: [{ color: "#d59563" }] }, { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#263c3f" }] }, { featureType: "poi.park", elementType: "labels.text.fill", stylers: [{ color: "#6b9a76" }] }, { featureType: "road", elementType: "geometry", stylers: [{ color: "#38414e" }] }, { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#212a37" }] }, { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#9ca5b3" }] }, { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#746855" }] }, { featureType: "road.highway", elementType: "geometry.stroke", stylers: [{ color: "#1f2835" }] }, { featureType: "road.highway", elementType: "labels.text.fill", stylers: [{ color: "#f3d19c" }] }, { featureType: "transit", elementType: "geometry", stylers: [{ color: "#2f3948" }] }, { featureType: "transit.station", elementType: "labels.text.fill", stylers: [{ color: "#d59563" }] }, { featureType: "water", elementType: "geometry", stylers: [{ color: "#17263c" }] }, { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#515c6d" }] }, { featureType: "water", elementType: "labels.text.stroke", stylers: [{ color: "#17263c" }] }] }}
-          >
-            {itinerary.map(p => <Marker key={p.id} position={{ lat: p.lat, lng: p.lng }} label={{ text: p.name, className: 'map-label' }} />)}
-            {directions && <DirectionsRenderer directions={directions} options={{ suppressMarkers: true }} />}
-            {showStreetView && streetViewPos && (<StreetViewPanorama options={{ position: streetViewPos, visible: showStreetView }} onCloseclick={() => setShowStreetView(false)} />)}
-          </GoogleMap>
-        </section>
+        <MapView
+          itinerary={itinerary}
+          mapCenter={mapCenter}
+          directions={directions}
+          showStreetView={showStreetView}
+          streetViewPos={streetViewPos}
+          onMapLoad={(map) => { mapRef.current = map; if (typeof google !== 'undefined') directionsServiceRef.current = new google.maps.DirectionsService() }}
+          onCloseStreetView={() => setShowStreetView(false)}
+        />
         <div style={{ position: 'absolute', left: '-9999px', top: 0 }}>
           <PosterRender ref={posterRef} activeDay={activeDay} itinerary={itinerary} schedule={schedule} posterTemplate={posterTemplate} />
         </div>

@@ -4,7 +4,7 @@
 
 ## 最新進度摘要
 
-目前已完成 Phase 1、Phase 2、Phase 3、Phase 4、Phase 5、Phase 6。
+目前已完成 Phase 1、Phase 2、Phase 3、Phase 4、Phase 5、Phase 6、Phase 9。
 
 ### 已完成重點
 
@@ -36,8 +36,8 @@
 
 ### 目前未完成但優先度高
 
-- Phase 9：拆分 `app/page.tsx`，降低後續維護成本
-- Phase 9：持續拆分匯出、分享、storage 邏輯
+- Phase 7：AI 智慧規劃
+- Phase 8：協作與雲端同步
 
 ### 驗證狀態
 
@@ -412,19 +412,19 @@
 - 分享權限可控
 - 不再只依賴網址參數或 localStorage
 
-## Phase 9：程式架構與測試（進行中）
+## Phase 9：程式架構與測試（已完成）
 
 目標：降低後續維護成本，避免功能變多後難以修改。
 
 ### 建議重構方向
 
-- 拆分大型 `app/page.tsx`
-- 將 UI components、hooks、utils 分層（本階段開始）
-- 抽出 Google Maps 相關邏輯
-- 抽出 route calculation 邏輯
-- 抽出 storage/share/export 邏輯
-- 統一錯誤處理
-- 建立基本測試
+- 拆分大型 `app/page.tsx`（本階段實作）
+- 將 UI components、hooks、utils 分層（本階段實作）
+- 抽出 Google Maps 相關邏輯（本階段實作）
+- 抽出 route calculation 邏輯（本階段實作）
+- 抽出 storage/share/export 邏輯（本階段實作）
+- 統一錯誤處理（本階段以 toast 與 pure utility 錯誤邊界整理）
+- 建立基本測試（本階段實作）
 
 ### 完成紀錄
 
@@ -436,15 +436,24 @@
 - 已在 Phase 5 抽出 `components/ExportDialog.tsx`
 - 已在 Phase 5 抽出 `components/PosterRender.tsx`
 - 已在 Phase 5 抽出 `utils/export.ts`
+- 已抽出 `components/ItineraryItem.tsx`
+- 已抽出 `components/MapView.tsx`
+- 已抽出 `hooks/useItinerary.ts`
+- 已抽出 `utils/storage.ts`
+- 已抽出 `utils/share.ts`
+- 已抽出 `utils/routes.ts`
+- 已抽出 `utils/validation.ts`
+- 已建立 `tests/time.test.ts`
+- 已建立 `tests/storage.test.ts`
+- 已建立 `tests/export.test.ts`
+- 已建立 `tests/share.test.ts`
+- 已建立 `tests/routes.test.ts`
+- 已建立 `tests/validation.test.ts`
+- 已執行靜態差異檢查；目前 shell 找不到 `node` / `npm`，`tsc` 也因缺少 `node` 無法啟動，尚無法執行 Next.js 建置與測試
 
 ### 尚未完成項目
 
-- 抽出 `components/ItineraryItem.tsx`
-- 抽出 `components/MapView.tsx`
-- 抽出 `hooks/useItinerary.ts`
-- 抽出 `utils/share.ts`
-- 抽出 `utils/storage.ts`
-- 建立時間計算與分享編碼測試
+- 無
 
 ### 建議目錄
 
@@ -490,14 +499,13 @@ types/
 
 ## 建議開發順序
 
-目前 Phase 1、Phase 2、Phase 3、Phase 4、Phase 5、Phase 6 已完成。後續建議順序如下：
+目前 Phase 1、Phase 2、Phase 3、Phase 4、Phase 5、Phase 6、Phase 9 已完成。後續建議順序如下：
 
-1. Phase 9：繼續拆分行程卡片、地圖、分享與 storage 邏輯
-2. Phase 7：AI 智慧規劃
-3. Phase 8：協作與雲端同步
-4. Phase 9：補時間計算單元測試
+1. Phase 7：AI 智慧規劃
+2. Phase 8：協作與雲端同步
+3. 補可執行 CI：安裝 Node 後跑 Next build 與測試
 
-若以長期產品化為目標，建議下一輪持續做 Phase 9 重構，避免 `app/page.tsx` 再度膨脹。
+若以長期產品化為目標，建議下一輪先補可執行 CI，再進入 Phase 7 的 AI 產生行程。
 
 ## 第一輪最推薦實作範圍
 

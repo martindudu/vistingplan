@@ -136,7 +136,7 @@ export const encodeSharePayload = async (days: DayPlan[], travelMode: string) =>
     m: travelMode,
   })
 
-  if ('CompressionStream' in window) {
+  if (typeof window !== 'undefined' && 'CompressionStream' in window) {
     const stream = new Blob([payload]).stream().pipeThrough(new (window as any).CompressionStream('gzip'))
     const buffer = await new Response(stream).arrayBuffer()
     return `gz.${bytesToBase64Url(new Uint8Array(buffer))}`
@@ -146,7 +146,7 @@ export const encodeSharePayload = async (days: DayPlan[], travelMode: string) =>
 }
 
 export const decodeSharePayload = async (encoded: string) => {
-  if (encoded.startsWith('gz.') && 'DecompressionStream' in window) {
+  if (encoded.startsWith('gz.') && typeof window !== 'undefined' && 'DecompressionStream' in window) {
     const bytes = base64UrlToBytes(encoded.slice(3))
     const stream = new Blob([bytes]).stream().pipeThrough(new (window as any).DecompressionStream('gzip'))
     const text = await new Response(stream).text()
