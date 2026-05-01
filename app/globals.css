@@ -864,6 +864,14 @@ body::after {
   background: rgba(255,255,255,0.035);
 }
 
+.cloud-panel {
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.035);
+}
+
 .panel-heading {
   display: flex;
   align-items: flex-start;
@@ -991,6 +999,109 @@ body::after {
 
 .booking-grid .wide {
   grid-column: 1 / -1;
+}
+
+.cloud-grid,
+.cloud-load-row,
+.cloud-collab-box {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.cloud-grid label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.cloud-grid span,
+.cloud-status span {
+  color: var(--text-dim);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.cloud-grid input,
+.cloud-grid select,
+.cloud-load-row input,
+.cloud-collab-box select,
+.cloud-collab-box textarea {
+  min-width: 0;
+  border: 1px solid var(--glass-border);
+  border-radius: 9px;
+  background: rgba(255,255,255,0.04);
+  color: #fff;
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  padding: 9px 10px;
+}
+
+.cloud-grid option,
+.cloud-collab-box option {
+  color: #000;
+}
+
+.cloud-status {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.cloud-status div {
+  min-width: 0;
+  border-radius: 9px;
+  padding: 8px 10px;
+  background: rgba(255,255,255,0.04);
+}
+
+.cloud-status strong {
+  display: block;
+  color: #fff;
+  font-size: 0.74rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cloud-load-row {
+  grid-template-columns: 0.85fr 1.35fr auto;
+}
+
+.cloud-collab-box {
+  grid-template-columns: 1fr;
+}
+
+.cloud-collab-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.cloud-comments {
+  display: grid;
+  gap: 8px;
+}
+
+.cloud-comments div {
+  border-radius: 9px;
+  padding: 8px 10px;
+  background: rgba(255,255,255,0.04);
+}
+
+.cloud-comments strong {
+  display: block;
+  color: #bfdbfe;
+  font-size: 0.74rem;
+  margin-bottom: 4px;
+}
+
+.cloud-comments span {
+  color: rgba(255,255,255,0.72);
+  font-size: 0.76rem;
+  line-height: 1.45;
 }
 
 .ai-explanation {
@@ -1402,7 +1513,11 @@ body::after {
   .budget-settings,
   .budget-summary-grid,
   .budget-category-list,
-  .booking-grid {
+  .booking-grid,
+  .cloud-grid,
+  .cloud-load-row,
+  .cloud-status,
+  .cloud-collab-actions {
     grid-template-columns: 1fr;
   }
 

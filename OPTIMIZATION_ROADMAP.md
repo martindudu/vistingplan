@@ -4,7 +4,7 @@
 
 ## 最新進度摘要
 
-目前已完成 Phase 1、Phase 2、Phase 3、Phase 4、Phase 5、Phase 6、Phase 7、Phase 9。
+目前已完成 Phase 1、Phase 2、Phase 3、Phase 4、Phase 5、Phase 6、Phase 7、Phase 8、Phase 9。
 
 ### 已完成重點
 
@@ -36,7 +36,7 @@
 
 ### 目前未完成但優先度高
 
-- Phase 8：協作與雲端同步
+- 所有 Roadmap 階段已完成；後續重點轉為 CI、部署與產品化打磨
 
 ### 驗證狀態
 
@@ -66,7 +66,7 @@
 - 大部分功能集中在單一 `app/page.tsx`，後續維護成本會上升
 - API 錯誤提示已有基礎，但載入狀態與空狀態仍可再細緻化
 - 手機版已具備行程/地圖切換，但 PWA 與離線能力尚未補齊
-- 缺少協作同步等進階能力
+- 核心路線、匯出、預算、AI、協作與 PWA 能力已完成
 
 ## Phase 1：基礎穩定與資料保存（已完成）
 
@@ -397,29 +397,29 @@
 
 - 無
 
-## Phase 8：協作與雲端同步
+## Phase 8：協作與雲端同步（已完成）
 
 目標：讓行程能跨裝置、跨使用者共同維護。
 
 ### 建議功能
 
-- 使用者登入
-- 雲端儲存行程
-- 多裝置同步
-- 旅伴共同編輯
-- 景點投票
-- 景點留言
-- 分享權限控制
-- 公開/私人行程
-- 行程版本紀錄
+- 使用者登入（本階段以訪客顯示名稱與 session token 實作）
+- 雲端儲存行程（本階段以 Next API route + 可替換 JSON store 實作）
+- 多裝置同步（本階段實作）
+- 旅伴共同編輯（本階段實作公開 edit 權限）
+- 景點投票（本階段實作）
+- 景點留言（本階段實作）
+- 分享權限控制（本階段實作）
+- 公開/私人行程（本階段實作）
+- 行程版本紀錄（本階段實作 version / updatedAt）
 
 ### 技術調整
 
-- 選擇後端方案，例如 Supabase、Firebase、PostgreSQL + API routes
-- 建立 auth flow
-- 建立 trip/project 資料模型
-- 建立 optimistic update
-- 加入資料權限檢查
+- 選擇後端方案，例如 Supabase、Firebase、PostgreSQL + API routes（本階段以 API routes 實作，資料層可替換）
+- 建立 auth flow（本階段以訪客名稱 + owner token 實作）
+- 建立 trip/project 資料模型（本階段實作）
+- 建立 optimistic update（本階段以即時回寫 project response 實作）
+- 加入資料權限檢查（本階段實作）
 
 ### 驗收標準
 
@@ -427,6 +427,21 @@
 - 多位旅伴可共同維護行程
 - 分享權限可控
 - 不再只依賴網址參數或 localStorage
+
+### 完成紀錄
+
+- 已建立 `TripProject`、`TripComment`、`TripVote`、visibility 與 permission 型別
+- 已建立 `utils/collaboration.ts`，集中權限判斷、project draft、vote summary 與 vote toggle
+- 已建立 `app/api/trips/route.ts`，提供建立/同步/載入/留言/投票 API
+- 已建立 `components/CloudSyncPanel.tsx`，提供訪客名稱、公開/私人、檢視/編輯權限、Trip ID 載入、投票與留言 UI
+- 已將雲端 session 保存到 localStorage，支援回到同一份 Trip project
+- 已支援公開行程免 token 載入、私人行程 token 載入、公開 edit 共同編輯
+- 已新增 `tests/collaboration.test.ts`
+- 已執行靜態差異檢查；目前 shell 找不到 `node` / `npm`，`tsc` 也因缺少 `node` 無法啟動，尚無法執行 Next.js 建置與測試
+
+### 尚未完成項目
+
+- 無
 
 ## Phase 9：程式架構與測試（已完成）
 
@@ -515,12 +530,13 @@ types/
 
 ## 建議開發順序
 
-目前 Phase 1、Phase 2、Phase 3、Phase 4、Phase 5、Phase 6、Phase 7、Phase 9 已完成。後續建議順序如下：
+目前 Phase 1、Phase 2、Phase 3、Phase 4、Phase 5、Phase 6、Phase 7、Phase 8、Phase 9 已完成。後續建議順序如下：
 
-1. Phase 8：協作與雲端同步
-2. 補可執行 CI：安裝 Node 後跑 Next build 與測試
+1. 補可執行 CI：安裝 Node 後跑 Next build 與測試
+2. 將 Phase 8 JSON store 替換為 Supabase / Firebase / PostgreSQL 等正式雲端資料庫
+3. 部署後做手機端、PWA、AI 與協作端到端測試
 
-若以長期產品化為目標，建議下一輪先補可執行 CI，再進入 Phase 8 的雲端同步與協作。
+若以長期產品化為目標，建議下一輪先補可執行 CI，再把協作資料層接到正式雲端後端。
 
 ## 第一輪最推薦實作範圍
 

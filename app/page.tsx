@@ -7,6 +7,7 @@ import dynamic from 'next/dynamic'
 import AiPlannerDialog from '../components/AiPlannerDialog'
 import BookingPanel from '../components/BookingPanel'
 import BudgetPanel from '../components/BudgetPanel'
+import CloudSyncPanel from '../components/CloudSyncPanel'
 import ExportDialog from '../components/ExportDialog'
 import ItineraryCard from '../components/ItineraryItem'
 import MapView from '../components/MapView'
@@ -27,7 +28,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { useItinerary } from '../hooks/useItinerary'
-import type { ItineraryItem, TripInfo } from '../types/itinerary'
+import type { ItineraryItem, TripInfo, TripPermission, TripProject, TripVisibility } from '../types/itinerary'
 import { buildCsv, buildGoogleCalendarUrl, buildIcs, buildLineShareText, buildTextSummary, buildXlsxBlob, type PosterTemplate } from '../utils/export'
 import { buildShareLink, parseSharePlan } from '../utils/share'
 import { createDefaultDay, defaultTripInfo, parseStoredPlan, serializePlan, STORAGE_KEY } from '../utils/storage'
@@ -35,6 +36,7 @@ import { applyRouteTravelTimes } from '../utils/routes'
 import { buildSchedule, crossesTimeWindow, formatMinutes, getWeekdayIndex, isWithinOpeningHours, parseDur, weekdayToGoogleIndex } from '../utils/time'
 import { buildDayWarnings } from '../utils/validation'
 import type { AiPlannerRequest, AiPlannerResponse, AiPlanPlace } from '../utils/aiPlanner'
+import { CLOUD_SESSION_KEY, CLOUD_USER_KEY, createProjectDraft, type CloudSession } from '../utils/collaboration'
 
 type ToastType = 'success' | 'error' | 'info'
 type MobileView = 'plan' | 'map'
@@ -84,6 +86,9 @@ function HomeContent() {
   const [showExportDialog, setShowExportDialog] = useState(false)
   const [showAiPlanner, setShowAiPlanner] = useState(false)
   const [aiExplanation, setAiExplanation] = useState('')
+  const [cloudProject, setCloudProject] = useState<TripProject | null>(null)
+  const [cloudUserName, setCloudUserName] = useState('Guest')
+  const [cloudSession, setCloudSession] = useState<CloudSession | null>(null)
   const [exportScope, setExportScope] = useState<ExportScope>('all')
   const [posterTemplate, setPosterTemplate] = useState<PosterTemplate>('classic')
   const [showOverview, setShowOverview] = useState(false)
@@ -249,6 +254,68 @@ function HomeContent() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const saveCloudProject = async (visibility: TripVisibility, permission: TripPermission) => {
+    try {
+      const project = cloudProject
+        ? { ...cloudProject, visibility, permission, days, tripInfo }
+        : createProjectDraft(days, tripInfo, visibility, permission, cloudUserName)
+      const res = await fetch('/api/trips', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'save', project, ownerToken: cloudSession?.ownerToken || cloudProject?.ownerToken }),
+      })
+      if (!res.ok) throw new Error('cloud save failed')
+      const saved = await res.json() as TripProject
+      setCloudProject(saved)
+      const nextSession = { tripId: saved.id, ownerToken: saved.ownerToken }
+      setCloudSession(nextSession)
+      window.localStorage.setItem(CLOUD_SESSION_KEY, JSON.stringify(nextSession))
+      showToast('雲端專案已同步。', 'success')
+    } catch {
+      showToast('雲端同步失敗，請稍後再試。', 'error')
+    }
+  }
+
+  const loadCloudProject = async (tripId: string, ownerToken: string) => {
+    try {
+      const params = new URLSearchParams({ id: tripId })
+      if (ownerToken) params.set('token', ownerToken)
+      const res = await fetch(`/api/trips?${params.toString()}`)
+      if (!res.ok) throw new Error('cloud load failed')
+      const project = await res.json() as TripProject
+      setCloudProject(project)
+      setDays(project.days)
+      setTripInfo(project.tripInfo)
+      setActiveDayId(project.days[0]?.id || activeDayId)
+      const nextSession = { tripId: project.id, ownerToken: ownerToken || project.ownerToken }
+      setCloudSession(nextSession)
+      window.localStorage.setItem(CLOUD_SESSION_KEY, JSON.stringify(nextSession))
+      showToast('已載入雲端行程。', 'success')
+    } catch {
+      showToast('雲端行程載入失敗，請確認 Trip ID 或權限。', 'error')
+    }
+  }
+
+  const addCloudComment = async (itemId: string, text: string) => {
+    if (!cloudProject) return
+    const res = await fetch('/api/trips', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'comment', id: cloudProject.id, ownerToken: cloudSession?.ownerToken, itemId, text, author: cloudUserName }),
+    })
+    if (res.ok) setCloudProject(await res.json())
+  }
+
+  const toggleCloudVote = async (itemId: string) => {
+    if (!cloudProject) return
+    const res = await fetch('/api/trips', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'vote', id: cloudProject.id, ownerToken: cloudSession?.ownerToken, itemId, author: cloudUserName }),
+    })
+    if (res.ok) setCloudProject(await res.json())
   }
 
   const searchNearby = useCallback(async (location?: { lat: number, lng: number }) => {
@@ -488,8 +555,12 @@ function HomeContent() {
         }
       }
 
-      try {
-        const decoded = parseStoredPlan(window.localStorage.getItem(STORAGE_KEY))
+    try {
+      const storedCloudUser = window.localStorage.getItem(CLOUD_USER_KEY)
+      if (storedCloudUser) setCloudUserName(storedCloudUser)
+      const storedCloudSession = window.localStorage.getItem(CLOUD_SESSION_KEY)
+      if (storedCloudSession) setCloudSession(JSON.parse(storedCloudSession))
+      const decoded = parseStoredPlan(window.localStorage.getItem(STORAGE_KEY))
         if (decoded) {
           setDays(decoded.days)
           setActiveDayId(decoded.activeDayId)
@@ -506,6 +577,10 @@ function HomeContent() {
 
     loadSavedPlan()
   }, [showToast])
+
+  useEffect(() => {
+    window.localStorage.setItem(CLOUD_USER_KEY, cloudUserName || 'Guest')
+  }, [cloudUserName])
 
   useEffect(() => {
     if (!hasRestored) return
@@ -842,6 +917,18 @@ function HomeContent() {
           </div>
           <BudgetPanel days={days} activeDayId={activeDayId} tripInfo={tripInfo} onTripInfoChange={updateTripInfo} />
           <BookingPanel booking={tripInfo.booking} onChange={(booking) => updateTripInfo({ booking })} />
+          <CloudSyncPanel
+            days={days}
+            activeDayId={activeDayId}
+            tripInfo={tripInfo}
+            cloudProject={cloudProject}
+            cloudUserName={cloudUserName}
+            onUserNameChange={setCloudUserName}
+            onCreateOrSave={saveCloudProject}
+            onLoad={loadCloudProject}
+            onComment={addCloudComment}
+            onVote={toggleCloudVote}
+          />
           {aiExplanation && <div className="ai-explanation"><strong>AI 說明</strong><p>{aiExplanation}</p></div>}
           <div className="itinerary-scroll-area">{itinerary.length === 0 ? <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.3)' }}>暫無行程</div> : (<DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}><SortableContext items={itinerary.map(i => i.id)} strategy={verticalListSortingStrategy}>{itinerary.map((item, idx) => (<ItineraryCard key={item.id} item={item} days={days} activeDayId={activeDayId} onUpdate={handleUpdateItem} onMoveToDay={moveItemToDay} onCopyToDay={copyItemToDay} onDelete={(id) => { const updated = itinerary.filter(i => i.id !== id); updateActiveDayItems(updated); calculateRoute(updated); }} onPeek={(lat, lng) => { setStreetViewPos({lat, lng}); setShowStreetView(true); }} startTime={schedule[idx]?.start} endTime={schedule[idx]?.end} />))}</SortableContext></DndContext>)}</div>
           <div className="action-bar">{days.some(day => day.items.length > 0) && <button className="btn-outline" onClick={clearAllPlans} disabled={loading} style={{ flex: 1 }}><IconTrash /> 清空</button>}{itinerary.length >= 3 && <button className="btn-outline" onClick={optimize} disabled={loading} style={{ flex: 1 }}><IconMagic /> 智慧排序</button>}{itinerary.length > 0 && <button className="btn-primary" onClick={openNavigation} style={{ flex: 2 }}><IconNavigation /> 開始導航</button>}</div>

@@ -50,3 +50,35 @@ export interface TripInfo {
   budgetLimit?: number
   booking: TripBookingInfo
 }
+
+export type TripVisibility = 'private' | 'public'
+
+export type TripPermission = 'view' | 'edit'
+
+export interface TripComment {
+  id: string
+  itemId?: string
+  author: string
+  text: string
+  createdAt: string
+}
+
+export interface TripVote {
+  itemId: string
+  voter: string
+  value: 1
+}
+
+export interface TripProject {
+  id: string
+  title: string
+  visibility: TripVisibility
+  permission: TripPermission
+  ownerToken: string
+  version: number
+  updatedAt: string
+  days: DayPlan[]
+  tripInfo: TripInfo
+  comments: TripComment[]
+  votes: TripVote[]
+}
