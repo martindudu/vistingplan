@@ -51,3 +51,47 @@ export const buildSchedule = (day: DayPlan) => {
     return acc
   }, [])
 }
+
+export const getWeekdayIndex = (date?: string) => {
+  const base = date ? new Date(`${date}T12:00:00`) : new Date()
+  return Number.isNaN(base.getTime()) ? new Date().getDay() : base.getDay()
+}
+
+export const weekdayToGoogleIndex = (weekdayIndex: number) => (weekdayIndex + 6) % 7
+
+export const parseClockToMinutes = (value: string) => {
+  const clean = value.trim().toLowerCase()
+  const match = clean.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/)
+  if (!match) return null
+  let hours = Number(match[1])
+  const minutes = Number(match[2] || 0)
+  const period = match[3]
+  if (period === 'pm' && hours < 12) hours += 12
+  if (period === 'am' && hours === 12) hours = 0
+  if (hours > 23 || minutes > 59) return null
+  return hours * 60 + minutes
+}
+
+export const parseOpeningIntervals = (openingText?: string) => {
+  if (!openingText) return []
+  if (/closed|休息|公休|不營業/i.test(openingText)) return []
+  if (/24\s*hours|24 小時|24小時/i.test(openingText)) return [{ start: 0, end: 24 * 60 }]
+  const ranges = openingText.match(/(\d{1,2}(?::\d{2})?\s*(?:AM|PM|am|pm)?)\s*[–—-]\s*(\d{1,2}(?::\d{2})?\s*(?:AM|PM|am|pm)?)/g) || []
+  return ranges.flatMap(range => {
+    const [startRaw, endRaw] = range.split(/[–—-]/)
+    const start = parseClockToMinutes(startRaw)
+    let end = parseClockToMinutes(endRaw)
+    if (start === null || end === null) return []
+    if (end <= start) end += 24 * 60
+    return [{ start, end }]
+  })
+}
+
+export const isWithinOpeningHours = (arrivalTime?: string, openingText?: string) => {
+  if (!arrivalTime || !openingText) return true
+  if (/closed|休息|公休|不營業/i.test(openingText)) return false
+  const intervals = parseOpeningIntervals(openingText)
+  if (intervals.length === 0) return true
+  const arrival = timeToMinutes(arrivalTime)
+  return intervals.some(interval => arrival >= interval.start && arrival <= interval.end)
+}

@@ -7,6 +7,7 @@ export interface Place {
 }
 
 export interface ItineraryItem extends Place {
+  type?: 'place' | 'meal' | 'note'
   travelTime?: string
   photoUrl?: string
   rating?: number
@@ -22,5 +23,6 @@ export interface DayPlan {
   title: string
   items: ItineraryItem[]
   startTime?: string
+  date?: string
   notes?: string
 }

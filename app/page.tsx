@@ -22,7 +22,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { DayPlan, ItineraryItem } from '../types/itinerary'
-import { buildSchedule, crossesTimeWindow, formatMinutes, parseDur } from '../utils/time'
+import { buildSchedule, crossesTimeWindow, formatMinutes, getWeekdayIndex, isWithinOpeningHours, parseDur, weekdayToGoogleIndex } from '../utils/time'
 
 const getWeatherIcon = (code?: number) => {
   if (code === undefined) return '☀️'
@@ -124,7 +124,7 @@ function SortableItem({ item, days, activeDayId, onDelete, onUpdate, onMoveToDay
 
 function HomeContent() {
   const [searchQuery, setSearchQuery] = useState('')
-  const [days, setDays] = useState<DayPlan[]>([{ id: 'day-1', title: 'Day 1', items: [], startTime: '09:00' }])
+  const [days, setDays] = useState<DayPlan[]>([{ id: 'day-1', title: 'Day 1', items: [], startTime: '09:00', date: new Date().toISOString().slice(0, 10) }])
   const [activeDayId, setActiveDayId] = useState('day-1')
   const [mapCenter, setMapCenter] = useState(defaultCenter)
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null)
@@ -183,6 +183,7 @@ function HomeContent() {
     const daySpan = schedule.length ? totalStay + totalTravel : 0
     const textForMealCheck = itinerary.map(item => `${item.name} ${item.notes || ''}`).join(' ')
     const hasMealStop = /(餐|食|飯|咖啡|茶|restaurant|cafe|lunch|dinner)/i.test(textForMealCheck)
+    const googleWeekday = weekdayToGoogleIndex(getWeekdayIndex(activeDay.date))
     const warnings: string[] = []
 
     if (itinerary.length >= 6) warnings.push('今日景點偏多，建議保留交通緩衝。')
@@ -190,15 +191,25 @@ function HomeContent() {
     if (itinerary.length >= 2 && totalTravel === 0) warnings.push('路線時間尚未完整計算，總時長可能偏低。')
     if (!hasMealStop && schedule.some(slot => crossesTimeWindow(slot.start, slot.end, 720, 810))) warnings.push('行程跨過午餐時段，可考慮安排用餐。')
     if (!hasMealStop && schedule.some(slot => crossesTimeWindow(slot.start, slot.end, 1080, 1170))) warnings.push('行程跨過晚餐時段，可考慮安排用餐。')
+    itinerary.forEach((item, idx) => {
+      const openingText = item.openingHours?.[googleWeekday]
+      if (openingText && !isWithinOpeningHours(schedule[idx]?.start, openingText)) {
+        warnings.push(`${item.name} 抵達時可能未營業。`)
+      }
+    })
 
     return { totalStay, totalTravel, endTime, daySpan, warnings }
-  }, [itinerary, schedule, activeDay.startTime])
+  }, [itinerary, schedule, activeDay.startTime, activeDay.date])
 
-  const fetchWeather = async (lat: number, lng: number) => {
+  const fetchWeather = async (lat: number, lng: number, date?: string) => {
     try {
-      const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true`)
+      const weatherUrl = date
+        ? `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&daily=weather_code,temperature_2m_max&timezone=auto&start_date=${date}&end_date=${date}`
+        : `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true`
+      const res = await fetch(weatherUrl)
       if (!res.ok) throw new Error('weather failed')
       const data = await res.json()
+      if (date && data.daily) return { temp: Math.round(data.daily.temperature_2m_max[0]), code: data.daily.weather_code[0] }
       return { temp: data.current_weather.temperature, code: data.current_weather.weathercode }
     } catch (e) {
       showToast('天氣資料暫時無法取得，行程仍可繼續編輯。', 'info')
@@ -209,7 +220,7 @@ function HomeContent() {
   const fetchDetails = async (placeId: string, lat: number, lng: number): Promise<Partial<ItineraryItem>> => {
     if (!mapRef.current || typeof google === 'undefined') return {}
     const service = new google.maps.places.PlacesService(mapRef.current)
-    const weather = await fetchWeather(lat, lng)
+    const weather = await fetchWeather(lat, lng, activeDay.date)
     return new Promise((resolve) => {
       service.getDetails({ placeId, fields: ['photos', 'rating', 'opening_hours'] }, (p, status) => {
         if (status === 'OK' && p) resolve({ photoUrl: p.photos?.[0]?.getUrl({ maxWidth: 200 }), rating: p.rating, openingHours: p.opening_hours?.weekday_text, weather })
@@ -285,7 +296,7 @@ function HomeContent() {
 
   const generateShareLink = () => {
     try {
-      const simplified = days.map(d => ({ t: d.title, s: d.startTime, no: d.notes, i: d.items.map(item => ({ p: item.id, n: item.name, a: item.address, lt: item.lat, lg: item.lng, no: item.notes, sd: item.stayDuration })) }))
+      const simplified = days.map(d => ({ t: d.title, s: d.startTime, dt: d.date, no: d.notes, i: d.items.map(item => ({ p: item.id, n: item.name, a: item.address, lt: item.lat, lg: item.lng, no: item.notes, sd: item.stayDuration, ty: item.type })) }))
       const encoded = btoa(encodeURIComponent(JSON.stringify({ d: simplified, m: travelMode })))
       return `${window.location.origin}${window.location.pathname}?plan=${encoded}`
     } catch (e) { return null }
@@ -424,13 +435,28 @@ function HomeContent() {
     }
   }
 
+  const refreshActiveDayWeather = async () => {
+    if (!activeDay.date || itinerary.length === 0) return
+    setLoading(true)
+    try {
+      const updated = await Promise.all(itinerary.map(async item => ({
+        ...item,
+        weather: await fetchWeather(item.lat, item.lng, activeDay.date),
+      })))
+      updateActiveDayItems(updated)
+      showToast('已依行程日期更新天氣。', 'success')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search); const planData = params.get('plan')
     if (planData) {
       let loadedFromPlan = false
       try {
         const decoded = JSON.parse(decodeURIComponent(atob(planData)))
-        setDays(decoded.d.map((day: any, idx: number) => ({ id: `day-${idx + 1}`, title: day.t, startTime: day.s || '09:00', notes: day.no, items: day.i.map((item: any) => ({ id: item.p, name: item.n, address: item.a, lat: item.lt, lng: item.lg, notes: item.no, stayDuration: item.sd })) })))
+        setDays(decoded.d.map((day: any, idx: number) => ({ id: `day-${idx + 1}`, title: day.t, startTime: day.s || '09:00', date: day.dt, notes: day.no, items: day.i.map((item: any) => ({ id: item.p, name: item.n, address: item.a, lat: item.lt, lng: item.lg, notes: item.no, stayDuration: item.sd, type: item.ty })) })))
         setActiveDayId('day-1')
         setTravelMode(decoded.m || 'DRIVING'); window.history.replaceState({}, '', window.location.pathname)
         showToast('已載入分享行程。', 'success')
@@ -510,7 +536,7 @@ function HomeContent() {
 
   const clearAllPlans = () => {
     if (!window.confirm('確定要清空所有行程嗎？')) return
-    const freshDay = { id: 'day-1', title: 'Day 1', items: [], startTime: '09:00' }
+    const freshDay = { id: 'day-1', title: 'Day 1', items: [], startTime: '09:00', date: new Date().toISOString().slice(0, 10) }
     setDays([freshDay])
     setActiveDayId(freshDay.id)
     setDirections(null)
@@ -521,7 +547,7 @@ function HomeContent() {
 
   const addDay = () => {
     const newId = `day-${Date.now()}`
-    const newDay = { id: newId, title: `Day ${days.length + 1}`, items: [], startTime: activeDay.startTime || '09:00' }
+    const newDay = { id: newId, title: `Day ${days.length + 1}`, items: [], startTime: activeDay.startTime || '09:00', date: activeDay.date }
     setDays(prev => [...prev, newDay])
     setActiveDayId(newId)
     setDirections(null)
@@ -543,7 +569,7 @@ function HomeContent() {
 
   const deleteActiveDay = () => {
     if (days.length === 1) {
-      const freshDay = { ...activeDay, title: 'Day 1', items: [], startTime: activeDay.startTime || '09:00' }
+      const freshDay = { ...activeDay, title: 'Day 1', items: [], startTime: activeDay.startTime || '09:00', date: activeDay.date || new Date().toISOString().slice(0, 10) }
       setDays([freshDay])
       setDirections(null)
       showToast('已清空目前 Day。', 'success')
@@ -583,6 +609,29 @@ function HomeContent() {
     const copiedItem = { ...item, id: `${item.id}-copy-${Date.now()}`, travelTime: undefined }
     setDays(prev => prev.map(day => day.id === targetDayId ? { ...day, items: [...day.items, copiedItem] } : day))
     showToast(`已將 ${item.name} 複製到 ${targetDay.title}。`, 'success')
+  }
+
+  const insertMealBreak = (meal: 'lunch' | 'dinner') => {
+    const label = meal === 'lunch' ? '午餐' : '晚餐'
+    const windowStart = meal === 'lunch' ? 720 : 1080
+    const windowEnd = meal === 'lunch' ? 810 : 1170
+    const insertAfterIndex = schedule.findIndex(slot => crossesTimeWindow(slot.start, slot.end, windowStart, windowEnd))
+    const source = insertAfterIndex >= 0 ? itinerary[insertAfterIndex] : itinerary[itinerary.length - 1]
+    const mealItem: ItineraryItem = {
+      id: `${meal}-${Date.now()}`,
+      type: 'meal',
+      name: `${label} / 休息`,
+      address: '自行安排用餐地點',
+      lat: source?.lat || defaultCenter.lat,
+      lng: source?.lng || defaultCenter.lng,
+      stayDuration: 60,
+      notes: '自動插入，可改成實際餐廳或休息點。',
+    }
+    const nextItems = [...itinerary]
+    nextItems.splice(insertAfterIndex >= 0 ? insertAfterIndex + 1 : nextItems.length, 0, mealItem)
+    updateActiveDayItems(nextItems)
+    calculateRoute(nextItems)
+    showToast(`已插入${label}時間。`, 'success')
   }
 
   const openNavigation = () => {
@@ -654,7 +703,11 @@ function HomeContent() {
             <button className="btn-outline" onClick={duplicateActiveDay} disabled={loading}>複製 Day</button>
             <button className="btn-outline" onClick={deleteActiveDay} disabled={loading}>{days.length === 1 ? '清空 Day' : '刪除 Day'}</button>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px', padding: '16px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid var(--glass-border)' }}><span style={{ fontSize: '0.85rem', fontWeight: '600' }}>今日出發時間:</span><input type="time" value={activeDay.startTime || '09:00'} onChange={(e) => updateActiveDay({ startTime: e.target.value })} style={{ background: 'transparent', color: '#fff', border: 'none', fontSize: '1rem', fontWeight: '800', cursor: 'pointer' }} /></div>
+          <div className="day-time-panel">
+            <label><span>日期</span><input type="date" value={activeDay.date || ''} onChange={(e) => updateActiveDay({ date: e.target.value })} /></label>
+            <label><span>出發</span><input type="time" value={activeDay.startTime || '09:00'} onChange={(e) => updateActiveDay({ startTime: e.target.value })} /></label>
+            <button className="btn-outline" onClick={refreshActiveDayWeather} disabled={loading || itinerary.length === 0 || !activeDay.date}>更新天氣</button>
+          </div>
           <textarea className="day-notes" placeholder="今日備註，例如集合資訊、訂位、攜帶物品..." value={activeDay.notes || ''} onChange={(e) => updateActiveDay({ notes: e.target.value })} rows={2} />
           <div className="summary-panel">
             <div className="summary-grid">
@@ -668,6 +721,10 @@ function HomeContent() {
                 {itinerarySummary.warnings.map(warning => <div key={warning}>{warning}</div>)}
               </div>
             )}
+            <div className="meal-actions">
+              <button onClick={() => insertMealBreak('lunch')}>插入午餐</button>
+              <button onClick={() => insertMealBreak('dinner')}>插入晚餐</button>
+            </div>
           </div>
           <div className="itinerary-scroll-area">{itinerary.length === 0 ? <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.3)' }}>暫無行程</div> : (<DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}><SortableContext items={itinerary.map(i => i.id)} strategy={verticalListSortingStrategy}>{itinerary.map((item, idx) => (<SortableItem key={item.id} item={item} days={days} activeDayId={activeDayId} onUpdate={handleUpdateItem} onMoveToDay={moveItemToDay} onCopyToDay={copyItemToDay} onDelete={(id) => { const updated = itinerary.filter(i => i.id !== id); updateActiveDayItems(updated); calculateRoute(updated); }} onPeek={(lat, lng) => { setStreetViewPos({lat, lng}); setShowStreetView(true); }} startTime={schedule[idx]?.start} endTime={schedule[idx]?.end} />))}</SortableContext></DndContext>)}</div>
           <div className="action-bar">{days.some(day => day.items.length > 0) && <button className="btn-outline" onClick={clearAllPlans} disabled={loading} style={{ flex: 1 }}><IconTrash /> 清空</button>}{itinerary.length >= 3 && <button className="btn-outline" onClick={optimize} disabled={loading} style={{ flex: 1 }}><IconMagic /> 智慧排序</button>}{itinerary.length > 0 && <button className="btn-primary" onClick={openNavigation} style={{ flex: 2 }}><IconNavigation /> 開始導航</button>}</div>

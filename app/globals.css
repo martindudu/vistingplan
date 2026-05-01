@@ -450,6 +450,47 @@ body::after {
   border-color: var(--accent);
 }
 
+.day-time-panel {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 10px;
+  align-items: stretch;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 12px;
+  border: 1px solid var(--glass-border);
+}
+
+.day-time-panel label {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.day-time-panel input {
+  width: 100%;
+  min-height: 36px;
+  background: rgba(255,255,255,0.04);
+  color: #fff;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  padding: 0 10px;
+  font-family: var(--font-body);
+  font-weight: 800;
+}
+
+.day-time-panel .btn-outline {
+  min-height: 100%;
+  padding: 8px 12px;
+  font-size: 0.75rem;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
 .summary-panel {
   margin-bottom: 20px;
   padding: 14px;
@@ -501,6 +542,25 @@ body::after {
   font-size: 0.78rem;
   font-weight: 700;
   line-height: 1.45;
+}
+
+.meal-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.meal-actions button {
+  border: 1px solid rgba(16, 185, 129, 0.24);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: rgba(16, 185, 129, 0.08);
+  color: #d1fae5;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  font-weight: 800;
 }
 
 /* 動作按鈕 */
@@ -691,6 +751,10 @@ body::after {
   .day-editor input {
     grid-column: 1 / -1;
     min-height: 42px;
+  }
+
+  .day-time-panel {
+    grid-template-columns: 1fr;
   }
 
   .summary-grid {
