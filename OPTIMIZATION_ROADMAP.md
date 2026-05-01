@@ -4,7 +4,7 @@
 
 ## 最新進度摘要
 
-目前已完成 Phase 1、Phase 2、Phase 3，並完成 Phase 4、Phase 5 的第一批可用功能。
+目前已完成 Phase 1、Phase 2、Phase 3、Phase 4，並完成 Phase 5 的第一批可用功能。
 
 ### 已完成重點
 
@@ -27,6 +27,7 @@
 - 手機版行程 / 地圖切換
 - 手機版底部固定操作列與一鍵導航
 - PWA 安裝提示與 service worker 基礎離線快取
+- 完整離線 fallback 頁面與 PWA icon
 - 文字版行程摘要複製
 - CSV 行程匯出
 
@@ -203,7 +204,7 @@
 - 已加入 Day 日期欄位與指定日期天氣更新
 - 已將時間計算抽成 `utils/time.ts` pure functions
 
-## Phase 4：手機版與 PWA 體驗（核心功能已完成）
+## Phase 4：手機版與 PWA 體驗（已完成）
 
 目標：讓使用者在旅途中也能順暢使用，而不只是桌面規劃工具。
 
@@ -216,6 +217,8 @@
 - 離線檢視已保存行程（本階段實作）
 - PWA 安裝提示（本階段實作）
 - 加入 service worker 快取基礎頁面與靜態資源（本階段實作）
+- 更完整的離線 fallback 頁面（本階段實作）
+- 針對地圖外部資源的快取策略細分（本階段實作）
 
 ### 技術調整
 
@@ -240,11 +243,15 @@
 - 已加入 PWA 安裝提示
 - 已註冊 service worker，快取基礎 app shell 與已請求資源
 - 已加入手機版景點卡片壓縮樣式
+- 已加入 `/offline.html`，網路中斷且無可用快取時提供清楚的離線說明與回到行程入口
+- 已補上 `/icon.svg`，讓 manifest 與 PWA 安裝圖示可正常載入
+- 已將 service worker 快取策略拆分為 app shell、同源 runtime cache、Google 外部資源 network-only
+- 已避免 Google Maps / Google APIs / gstatic 等外部地圖資源被盲目寫入 runtime cache
+- 已執行靜態差異檢查；目前 shell 找不到 `node` / `npm`，尚無法執行 Next.js 建置驗證
 
 ### 尚未完成項目
 
-- 更完整的離線 fallback 頁面
-- 針對地圖外部資源的快取策略細分
+- 無
 
 ## Phase 5：匯出與分享升級（核心功能已完成）
 
@@ -460,7 +467,7 @@ types/
 
 ## 建議開發順序
 
-目前 Phase 1、Phase 2、Phase 3 已完成；Phase 4、Phase 5 已完成第一批功能。後續建議順序如下：
+目前 Phase 1、Phase 2、Phase 3、Phase 4 已完成；Phase 5 已完成第一批功能。後續建議順序如下：
 
 1. Phase 9：繼續拆分 `ExportDialog`、分享、storage 邏輯
 2. Phase 6：預算與旅行資訊管理

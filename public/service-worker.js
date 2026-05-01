@@ -1,13 +1,18 @@
-const CACHE_NAME = 'travel-architect-cache-v1'
+const CACHE_VERSION = 'v2'
+const APP_CACHE = `travel-architect-app-${CACHE_VERSION}`
+const RUNTIME_CACHE = `travel-architect-runtime-${CACHE_VERSION}`
 const APP_SHELL = [
   '/',
+  '/offline.html',
   '/manifest.json',
   '/icon.svg',
 ]
 
+const GOOGLE_HOST_RE = /(^|\.)googleapis\.com$|(^|\.)gstatic\.com$|(^|\.)google\.com$|(^|\.)googleusercontent\.com$/
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME)
+    caches.open(APP_CACHE)
       .then((cache) => cache.addAll(APP_SHELL))
       .then(() => self.skipWaiting())
   )
@@ -16,21 +21,62 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(keys
+        .filter((key) => ![APP_CACHE, RUNTIME_CACHE].includes(key))
+        .map((key) => caches.delete(key))))
       .then(() => self.clients.claim())
   )
 })
 
 self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET') return
+  const { request } = event
+  if (request.method !== 'GET') return
 
-  event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        const copy = response.clone()
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy))
-        return response
-      })
-      .catch(() => caches.match(event.request).then((cached) => cached || caches.match('/')))
-  )
+  const url = new URL(request.url)
+
+  if (GOOGLE_HOST_RE.test(url.hostname)) {
+    event.respondWith(fetch(request))
+    return
+  }
+
+  if (request.mode === 'navigate') {
+    event.respondWith(handleNavigation(request))
+    return
+  }
+
+  if (url.origin === self.location.origin) {
+    event.respondWith(staleWhileRevalidate(request))
+    return
+  }
+
+  event.respondWith(fetch(request).catch(() => caches.match(request)))
 })
+
+async function handleNavigation(request) {
+  try {
+    const response = await fetch(request)
+    const cache = await caches.open(APP_CACHE)
+    cache.put('/', response.clone())
+    return response
+  } catch (error) {
+    return (await caches.match(request))
+      || (await caches.match('/'))
+      || (await caches.match('/offline.html'))
+  }
+}
+
+async function staleWhileRevalidate(request) {
+  const cached = await caches.match(request)
+  const network = fetch(request)
+    .then(async (response) => {
+      if (response && response.ok) {
+        const cache = await caches.open(RUNTIME_CACHE)
+        cache.put(request, response.clone())
+      }
+      return response
+    })
+    .catch(() => undefined)
+
+  if (cached) return cached
+  return (await network) || caches.match('/offline.html')
+}

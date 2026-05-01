@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Travel Architect">
+  <rect width="512" height="512" rx="112" fill="#0a0a0c"/>
+  <path d="M104 358 256 92l152 266H104Z" fill="#3b82f6"/>
+  <path d="M256 92v266H104L256 92Z" fill="#60a5fa"/>
+  <path d="M188 358h136l-68 72-68-72Z" fill="#ffffff"/>
+  <circle cx="256" cy="238" r="46" fill="#0a0a0c"/>
+  <circle cx="256" cy="238" r="20" fill="#ffffff"/>
+</svg>
