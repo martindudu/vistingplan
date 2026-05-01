@@ -35,6 +35,7 @@ const getWeatherIcon = (code?: number) => {
 type ToastType = 'success' | 'error' | 'info'
 type MobileView = 'plan' | 'map'
 type ExportScope = 'active' | 'all'
+type CustomItemType = 'place' | 'note'
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
@@ -78,12 +79,17 @@ function SortableItem({ item, days, activeDayId, onDelete, onUpdate, onMoveToDay
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
             {startTime && <div style={{ fontSize: '0.75rem', fontWeight: '800', color: 'var(--accent)', marginBottom: '4px' }}>{startTime} - {endTime}</div>}
-            <h3 className="item-name">{item.name}</h3>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px' }}>
-              <button className="btn-peek" onClick={(e) => { e.stopPropagation(); onPeek(item.lat, item.lng); }} style={{ padding: '4px 10px', fontSize: '0.7rem', width: 'auto', gap: '4px' }}>
-                <IconEye /> 街景
-              </button>
+            <div className="item-title-row">
+              <h3 className="item-name">{item.name}</h3>
+              {item.type && item.type !== 'place' && <span className={`item-type-badge ${item.type}`}>{item.type === 'meal' ? '用餐' : '備忘'}</span>}
             </div>
+            {item.type !== 'note' && (
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px' }}>
+                <button className="btn-peek" onClick={(e) => { e.stopPropagation(); onPeek(item.lat, item.lng); }} style={{ padding: '4px 10px', fontSize: '0.7rem', width: 'auto', gap: '4px' }}>
+                  <IconEye /> 街景
+                </button>
+              </div>
+            )}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
             <button className="delete-button" onClick={(e) => { e.stopPropagation(); onDelete(item.id); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.2)' }}><IconTrash /></button>
@@ -142,6 +148,12 @@ function HomeContent() {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [showExportDialog, setShowExportDialog] = useState(false)
   const [exportScope, setExportScope] = useState<ExportScope>('all')
+  const [showOverview, setShowOverview] = useState(false)
+  const [showCustomItemForm, setShowCustomItemForm] = useState(false)
+  const [customItemType, setCustomItemType] = useState<CustomItemType>('place')
+  const [customItemName, setCustomItemName] = useState('')
+  const [customItemAddress, setCustomItemAddress] = useState('')
+  const [customStayDuration, setCustomStayDuration] = useState(60)
   const mapRef = useRef<google.maps.Map | null>(null)
   const directionsServiceRef = useRef<google.maps.DirectionsService | null>(null)
   const posterRef = useRef<HTMLDivElement>(null)
@@ -162,9 +174,13 @@ function HomeContent() {
     setDays(prev => prev.map(d => d.id === activeDayId ? { ...d, ...updates } : d))
   }, [activeDayId])
 
+  const updateDayItems = useCallback((dayId: string, newItems: ItineraryItem[]) => {
+    setDays(prev => prev.map(d => d.id === dayId ? { ...d, items: newItems } : d))
+  }, [])
+
   const updateActiveDayItems = useCallback((newItems: ItineraryItem[]) => {
-    updateActiveDay({ items: newItems })
-  }, [updateActiveDay])
+    updateDayItems(activeDayId, newItems)
+  }, [activeDayId, updateDayItems])
 
   const handleUpdateItem = useCallback((id: string, updates: Partial<ItineraryItem>) => {
     updateActiveDayItems(itinerary.map(i => i.id === id ? { ...i, ...updates } : i))
@@ -200,6 +216,21 @@ function HomeContent() {
 
     return { totalStay, totalTravel, endTime, daySpan, warnings }
   }, [itinerary, schedule, activeDay.startTime, activeDay.date])
+
+  const overviewDays = useMemo(() => {
+    return days.map(day => {
+      const daySchedule = buildSchedule(day)
+      const totalStay = day.items.reduce((sum, item) => sum + (item.stayDuration || 60), 0)
+      const totalTravel = day.items.reduce((sum, item) => sum + (item.travelTime ? parseDur(item.travelTime) : 0), 0)
+      return {
+        day,
+        schedule: daySchedule,
+        totalStay,
+        totalTravel,
+        endTime: daySchedule[daySchedule.length - 1]?.end || day.startTime || '09:00',
+      }
+    })
+  }, [days])
 
   const fetchWeather = async (lat: number, lng: number, date?: string) => {
     try {
@@ -260,7 +291,7 @@ function HomeContent() {
     }
   }
 
-  const calculateRoute = useCallback(async (items: ItineraryItem[], mode: string = travelMode) => {
+  const calculateRoute = useCallback(async (items: ItineraryItem[], mode: string = travelMode, dayId: string = activeDayId) => {
     if (items.length < 2 || !directionsServiceRef.current || typeof google === 'undefined') { setDirections(null); return }
     const res = await new Promise<google.maps.DirectionsResult | null>((resolve) => {
       directionsServiceRef.current!.route({ origin: { lat: items[0].lat, lng: items[0].lng }, destination: { lat: items[items.length - 1].lat, lng: items[items.length - 1].lng }, waypoints: items.slice(1, -1).map(i => ({ location: { lat: i.lat, lng: i.lng }, stopover: true })), travelMode: mode as google.maps.TravelMode }, (result, status) => {
@@ -271,9 +302,9 @@ function HomeContent() {
     if (res) {
       setDirections(res); const updatedItems = [...items]
       res.routes[0].legs.forEach((leg, i) => { if (updatedItems[i]) updatedItems[i].travelTime = leg.duration?.text })
-      updateActiveDayItems(updatedItems)
+      updateDayItems(dayId, updatedItems)
     }
-  }, [travelMode, updateActiveDayItems, showToast])
+  }, [travelMode, activeDayId, updateDayItems, showToast])
 
   useEffect(() => { calculateRoute(itinerary, travelMode) }, [travelMode])
 
@@ -634,6 +665,34 @@ function HomeContent() {
     showToast(`已插入${label}時間。`, 'success')
   }
 
+  const addCustomItem = () => {
+    const name = customItemName.trim()
+    if (!name) {
+      showToast('請先輸入自訂項目名稱。', 'info')
+      return
+    }
+
+    const anchor = itinerary[itinerary.length - 1]
+    const customItem: ItineraryItem = {
+      id: `custom-${customItemType}-${Date.now()}`,
+      type: customItemType,
+      name,
+      address: customItemType === 'note' ? '備忘項目' : customItemAddress.trim() || '自訂地點',
+      lat: anchor?.lat || mapCenter.lat || defaultCenter.lat,
+      lng: anchor?.lng || mapCenter.lng || defaultCenter.lng,
+      stayDuration: customStayDuration,
+      notes: customItemType === 'note' ? customItemAddress.trim() : undefined,
+    }
+
+    const nextItems = [...itinerary, customItem]
+    updateActiveDayItems(nextItems)
+    calculateRoute(nextItems)
+    setCustomItemName('')
+    setCustomItemAddress('')
+    setShowCustomItemForm(false)
+    showToast(customItemType === 'note' ? '已新增備忘項目。' : '已新增自訂地點。', 'success')
+  }
+
   const openNavigation = () => {
     if (itinerary.length === 0) return
     const waypoints = itinerary.slice(0, -1).map(i => encodeURIComponent(i.address || i.name)).join('|')
@@ -685,6 +744,49 @@ function HomeContent() {
             </section>
           </div>
         )}
+        {showOverview && (
+          <div className="modal-backdrop" role="presentation" onClick={() => setShowOverview(false)}>
+            <section className="overview-dialog" role="dialog" aria-modal="true" aria-labelledby="overview-title" onClick={(e) => e.stopPropagation()}>
+              <div className="export-dialog-header">
+                <div>
+                  <h2 id="overview-title">行程總覽</h2>
+                  <p>快速檢視所有天數的時間、停留、交通與備註。</p>
+                </div>
+                <button className="dialog-close" onClick={() => setShowOverview(false)}>×</button>
+              </div>
+              <div className="overview-list">
+                {overviewDays.map(({ day, schedule: daySchedule, totalStay, totalTravel, endTime }) => (
+                  <article key={day.id} className="overview-day">
+                    <div className="overview-day-header">
+                      <div>
+                        <h3>{day.title}</h3>
+                        <p>{day.date || '未設定日期'} · {day.startTime || '09:00'} - {endTime}</p>
+                      </div>
+                      <button className={activeDayId === day.id ? 'active' : ''} onClick={() => { setActiveDayId(day.id); calculateRoute(day.items, travelMode, day.id); setShowOverview(false) }}>
+                        {activeDayId === day.id ? '目前 Day' : '前往'}
+                      </button>
+                    </div>
+                    <div className="overview-stats">
+                      <span>{day.items.length} 項</span>
+                      <span>停留 {formatMinutes(totalStay)}</span>
+                      <span>交通 {formatMinutes(totalTravel)}</span>
+                    </div>
+                    {day.notes && <p className="overview-note">{day.notes}</p>}
+                    <ol className="overview-items">
+                      {day.items.length === 0 ? <li>暫無行程</li> : day.items.map((item, idx) => (
+                        <li key={item.id}>
+                          <span>{daySchedule[idx]?.start || '--:--'}</span>
+                          <strong>{item.name}</strong>
+                          {item.type === 'note' && <em>備忘</em>}
+                        </li>
+                      ))}
+                    </ol>
+                  </article>
+                ))}
+              </div>
+            </section>
+          </div>
+        )}
         <aside className="sidebar">
           <header className="header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div><h1>Travel <br />Architect</h1><p>您的專屬旅遊建築師。</p></div>
@@ -697,9 +799,10 @@ function HomeContent() {
           <div className="search-container"><Autocomplete onLoad={setAutocomplete} onPlaceChanged={onPlaceChanged}><input type="text" className="search-input" placeholder="您想去哪裡？" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} /></Autocomplete></div>
           <div className="transport-selector">{['DRIVING', 'WALKING', 'TRANSIT'].map(m => (<button key={m} className={`day-tab-btn ${travelMode === m ? 'active' : ''}`} onClick={() => setTravelMode(m)}>{m === 'DRIVING' ? <IconCar /> : m === 'WALKING' ? <IconWalk /> : <IconTrain />} {m === 'DRIVING' ? '開車' : m === 'WALKING' ? '走路' : '大眾運輸'}</button>))}</div>
           <div className="discovery-section"><div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', color: 'var(--accent)' }}><IconSparkles /> <h2 style={{ fontSize: '1rem', fontWeight: '800', textTransform: 'uppercase' }}>探索周邊</h2></div><div style={{ display: 'flex', gap: '4px', marginBottom: '16px' }}>{['tourist_attraction', 'restaurant', 'lodging'].map(c => <button key={c} className={`day-tab-btn ${discoveryCategory === c ? 'active' : ''}`} onClick={() => setDiscoveryCategory(c)} style={{ fontSize: '0.7rem' }}>{c==='tourist_attraction'?'景點':c==='restaurant'?'美食':'住宿'}</button>)}</div><div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '8px', scrollbarWidth: 'none' }}>{discoveryLoading ? <div style={{ color: 'var(--text-dim)', fontSize: '0.8rem' }}>探索中...</div> : discoveryResults.map(res => (<div key={res.id} onClick={async () => { setLoading(true); const details = await fetchDetails(res.id, res.lat, res.lng); const updated = [...itinerary, { ...res, ...details }]; updateActiveDayItems(updated); calculateRoute(updated); setLoading(false) }} style={{ width: '120px', flexShrink: 0, cursor: 'pointer' }}><div style={{ width: '120px', height: '80px', borderRadius: '12px', overflow: 'hidden', marginBottom: '8px', background: 'var(--glass-surface)', border: '1px solid var(--glass-border)' }}>{res.photoUrl ? <img src={res.photoUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', color: 'var(--text-dim)' }}>無照片</div>}</div><div style={{ fontSize: '0.75rem', fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{res.name}</div><div style={{ fontSize: '0.65rem', color: '#f59e0b' }}>★ {res.rating || 'N/A'}</div></div>))}</div></div>
-          <div className="day-tabs">{days.map(d => (<button key={d.id} className={`day-tab-btn ${activeDayId === d.id ? 'active' : ''}`} onClick={() => { setActiveDayId(d.id); calculateRoute(d.items) }}>{d.title}</button>))}<button className="day-tab-btn" onClick={addDay}>+ Add</button></div>
+          <div className="day-tabs">{days.map(d => (<button key={d.id} className={`day-tab-btn ${activeDayId === d.id ? 'active' : ''}`} onClick={() => { setActiveDayId(d.id); calculateRoute(d.items, travelMode, d.id) }}>{d.title}</button>))}<button className="day-tab-btn" onClick={addDay}>+ Add</button></div>
           <div className="day-editor">
             <input aria-label="Day 名稱" value={activeDay.title} onChange={(e) => updateActiveDay({ title: e.target.value })} />
+            <button className="btn-outline" onClick={() => setShowOverview(true)} disabled={loading}>總覽</button>
             <button className="btn-outline" onClick={duplicateActiveDay} disabled={loading}>複製 Day</button>
             <button className="btn-outline" onClick={deleteActiveDay} disabled={loading}>{days.length === 1 ? '清空 Day' : '刪除 Day'}</button>
           </div>
@@ -707,6 +810,26 @@ function HomeContent() {
             <label><span>日期</span><input type="date" value={activeDay.date || ''} onChange={(e) => updateActiveDay({ date: e.target.value })} /></label>
             <label><span>出發</span><input type="time" value={activeDay.startTime || '09:00'} onChange={(e) => updateActiveDay({ startTime: e.target.value })} /></label>
             <button className="btn-outline" onClick={refreshActiveDayWeather} disabled={loading || itinerary.length === 0 || !activeDay.date}>更新天氣</button>
+          </div>
+          <div className="custom-item-panel">
+            <div className="custom-item-header">
+              <strong>自訂項目</strong>
+              <button className="btn-outline" onClick={() => setShowCustomItemForm(prev => !prev)}>{showCustomItemForm ? '收合' : '+ 自訂'}</button>
+            </div>
+            {showCustomItemForm && (
+              <div className="custom-item-form">
+                <select value={customItemType} onChange={(e) => setCustomItemType(e.target.value as CustomItemType)}>
+                  <option value="place">自訂地點</option>
+                  <option value="note">備忘項目</option>
+                </select>
+                <input value={customItemName} onChange={(e) => setCustomItemName(e.target.value)} placeholder={customItemType === 'note' ? '例如：集合 / 休息 / 購物時間' : '地點名稱'} />
+                <input value={customItemAddress} onChange={(e) => setCustomItemAddress(e.target.value)} placeholder={customItemType === 'note' ? '備忘內容，可留空' : '地址，可留空'} />
+                <select value={customStayDuration} onChange={(e) => setCustomStayDuration(parseInt(e.target.value))}>
+                  {[15, 30, 45, 60, 90, 120, 180].map(v => <option key={v} value={v}>{v >= 60 ? `${v / 60} 小時` : `${v} 分鐘`}</option>)}
+                </select>
+                <button className="btn-primary" onClick={addCustomItem}>加入目前 Day</button>
+              </div>
+            )}
           </div>
           <textarea className="day-notes" placeholder="今日備註，例如集合資訊、訂位、攜帶物品..." value={activeDay.notes || ''} onChange={(e) => updateActiveDay({ notes: e.target.value })} rows={2} />
           <div className="summary-panel">
