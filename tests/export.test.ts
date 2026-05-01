@@ -32,7 +32,7 @@ test('text summary includes budget and reservation data', () => {
 
 test('csv exports phase 6 budget columns', () => {
   const csv = buildCsv([day])
-  assert.match(csv, /Cost,Category,Payment,ReservationCode/)
+  assert.match(csv, /"Cost","Category","Payment","ReservationCode"/)
   assert.match(csv, /ABC123/)
 })
 

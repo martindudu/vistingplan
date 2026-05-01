@@ -206,7 +206,7 @@ const columnName = (index: number) => {
 const bytesToBase64Url = (bytes: Uint8Array) => {
   let binary = ''
   for (let i = 0; i < bytes.length; i += 0x8000) {
-    binary += String.fromCharCode(...bytes.slice(i, i + 0x8000))
+    binary += String.fromCharCode(...Array.from(bytes.subarray(i, i + 0x8000)))
   }
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
 }
@@ -255,8 +255,10 @@ const zipFiles = (files: Record<string, string>, type: string) => {
   view.setUint32(12, centralSize, true)
   view.setUint32(16, offset, true)
 
-  return new Blob([...localParts, ...centralParts, end], { type })
+  return new Blob([...localParts, ...centralParts, end].map(toBlobPart), { type })
 }
+
+const toBlobPart = (bytes: Uint8Array): ArrayBuffer => new Uint8Array(bytes).buffer
 
 const zipHeader = (signature: number, nameBytes: Uint8Array, crc: number, size: number, offset: number) => {
   const isCentral = signature === 0x02014b50

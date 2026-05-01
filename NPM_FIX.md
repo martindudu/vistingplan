@@ -1,4 +1,86 @@
-# 🔧 npm 安裝錯誤解決方案
+# Node / npm 環境修復紀錄
+
+## 目前可用環境
+
+已在使用者目錄安裝 portable Node.js，不需要系統管理員權限：
+
+```powershell
+C:\Users\dindin\AppData\Local\Programs\nodejs-portable\node-v22.22.2-win-x64
+```
+
+版本：
+
+```powershell
+node --version  # v22.22.2
+npm --version   # 10.9.7
+npx --version   # 10.9.7
+```
+
+此路徑已加入使用者 PATH。若目前已開啟的終端還讀不到 `node` / `npm`，請重新開一個 PowerShell，或先在目前 session 執行：
+
+```powershell
+$nodeDir = "$env:LOCALAPPDATA\Programs\nodejs-portable\node-v22.22.2-win-x64"
+$env:Path = "$nodeDir;$PWD\node_modules\.bin;$env:Path"
+```
+
+## 專案驗證命令
+
+完整驗證：
+
+```powershell
+npm run validate
+```
+
+若目前終端還沒有載入 PATH，可直接使用專案內腳本：
+
+```powershell
+.\scripts\validate.ps1
+```
+
+含 production server smoke test：
+
+```powershell
+.\scripts\validate.ps1 -Smoke
+```
+
+此命令會依序執行：
+
+```powershell
+npm run typecheck
+npm run lint
+npm run build
+npm run test
+```
+
+部署前 smoke test 可在 build 後執行：
+
+```powershell
+npm run build
+npm run start -- -p 3010
+```
+
+再用瀏覽器開啟：
+
+```text
+http://localhost:3010
+```
+
+## 2026-05-02 驗證結果
+
+- `npm run validate`：通過
+- TypeScript：通過
+- ESLint：通過，仍有既有 warnings
+- Production build：通過
+- Node test：17 passed / 0 failed
+- Production smoke test：首頁 200，`/api/trips` save/read 200
+
+仍可後續處理的 warnings：
+
+- `app/page.tsx` 有 3 個 `react-hooks/exhaustive-deps` warning
+- `app/page.tsx`、`components/ItineraryItem.tsx`、`components/PosterRender.tsx` 有 `<img>` 可改 `next/image` 的 warning
+- Next metadata `themeColor` 建議移到 `viewport` export
+
+# 舊 npm 安裝錯誤解決方案
 
 ## 錯誤說明
 

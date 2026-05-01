@@ -489,6 +489,7 @@ body::after {
   display: flex;
   flex-direction: column;
   scrollbar-width: none;
+  min-width: 0;
 }
 
 .sidebar::-webkit-scrollbar { display: none; }
@@ -512,6 +513,21 @@ body::after {
 .header > div:last-child {
   flex-wrap: wrap;
   justify-content: flex-end;
+  min-width: 0;
+}
+
+.header,
+.search-container,
+.transport-selector,
+.discovery-section,
+.day-tabs,
+.day-editor,
+.day-time-panel,
+.custom-item-panel,
+.summary-panel,
+.itinerary-scroll-area,
+.action-bar {
+  min-width: 0;
 }
 
 /* 搜尋框設計 */
@@ -543,6 +559,7 @@ body::after {
   padding: 20px;
   transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   cursor: grab;
+  min-width: 0;
 }
 
 .itinerary-item:hover {
@@ -551,11 +568,27 @@ body::after {
   transform: translateY(-4px) scale(1.01);
 }
 
+.item-details {
+  min-width: 0;
+}
+
+.item-details > div:first-child {
+  gap: 12px;
+  min-width: 0;
+}
+
+.item-details > div:first-child > div:first-child {
+  min-width: 0;
+}
+
 .item-name {
   font-family: var(--font-display);
   font-size: 1.5rem;
   color: #fff;
   margin-bottom: 4px;
+  line-height: 1.08;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .item-title-row {
@@ -563,6 +596,7 @@ body::after {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .item-type-badge {
@@ -628,6 +662,9 @@ body::after {
   background: transparent;
   cursor: pointer;
   transition: all 0.3s;
+  white-space: normal;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .day-tab-btn.active {
@@ -638,7 +675,7 @@ body::after {
 
 .day-editor {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: minmax(0, 1fr) repeat(3, minmax(max-content, auto));
   gap: 8px;
   margin-bottom: 16px;
   padding: 10px;
@@ -668,7 +705,33 @@ body::after {
   padding: 10px 12px;
   border-radius: 10px;
   font-size: 0.75rem;
-  white-space: nowrap;
+  white-space: normal;
+  line-height: 1.2;
+}
+
+.transport-selector {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.transport-selector .day-tab-btn {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.discovery-place-name {
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.25;
+  min-height: 2.5em;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .item-day-tools {
@@ -686,6 +749,7 @@ body::after {
   color: #fff;
   font-size: 0.75rem;
   font-family: var(--font-body);
+  text-overflow: ellipsis;
 }
 
 .item-day-tools option {
@@ -1251,6 +1315,9 @@ body::after {
   justify-content: center;
   gap: 8px;
   min-height: 52px;
+  min-width: 0;
+  line-height: 1.2;
+  white-space: normal;
 }
 
 .poster-render {
