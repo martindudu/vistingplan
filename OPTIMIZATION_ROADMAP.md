@@ -4,7 +4,7 @@
 
 ## 最新進度摘要
 
-目前已完成 Phase 1、Phase 2、Phase 3、Phase 4，並完成 Phase 5 的第一批可用功能。
+目前已完成 Phase 1、Phase 2、Phase 3、Phase 4、Phase 5。
 
 ### 已完成重點
 
@@ -33,7 +33,6 @@
 
 ### 目前未完成但優先度高
 
-- Phase 5：Google Calendar / iCal 與 LINE 分享格式
 - Phase 9：拆分 `app/page.tsx`，降低後續維護成本
 - Phase 6：預算與旅行資訊管理
 - Phase 9：持續拆分匯出、分享、storage 邏輯
@@ -253,27 +252,27 @@
 
 - 無
 
-## Phase 5：匯出與分享升級（核心功能已完成）
+## Phase 5：匯出與分享升級（已完成）
 
 目標：讓行程可以更容易交給旅伴、列印、存檔或放進其他工具。
 
 ### 建議功能
 
 - PDF 匯出（本階段實作，透過列印視窗另存 PDF）
-- CSV / Excel 匯出（本階段實作 CSV）
-- Google Calendar / iCal 匯出
+- CSV / Excel 匯出（本階段實作）
+- Google Calendar / iCal 匯出（本階段實作）
 - 文字版行程摘要（本階段實作）
-- LINE 分享格式
+- LINE 分享格式（本階段實作）
 - 可選擇匯出單日或全部天數（本階段實作）
-- 海報模板選擇
-- 分享連結壓縮，避免網址過長
+- 海報模板選擇（本階段實作）
+- 分享連結壓縮，避免網址過長（本階段實作）
 
 ### 技術調整
 
-- 建立 `utils/export.ts`
-- 建立 `components/ExportDialog.tsx`
-- 考慮使用短連結後端或雲端儲存方案
-- 分離 poster render component
+- 建立 `utils/export.ts`（本階段實作）
+- 建立 `components/ExportDialog.tsx`（本階段實作）
+- 考慮使用短連結後端或雲端儲存方案（已評估：本階段先以前端 gzip 壓縮降低網址長度）
+- 分離 poster render component（本階段實作）
 
 ### 驗收標準
 
@@ -291,14 +290,20 @@
 - 已加入目前 Day / 全部天數匯出範圍切換
 - 已加入 PDF 列印視窗，可由瀏覽器另存成 PDF
 - 已將海報 PNG 匯出整合進匯出對話框
+- 已建立 `utils/export.ts`，集中處理文字摘要、CSV、xlsx、iCal、Google Calendar、LINE 與分享連結編碼
+- 已建立 `components/ExportDialog.tsx`，將匯出對話框從主頁抽出
+- 已建立 `components/PosterRender.tsx`，將海報 render 結構從主頁抽出
+- 已加入 Excel xlsx 匯出
+- 已加入 iCal `.ics` 匯出
+- 已加入 Google Calendar 新增事件入口
+- 已加入 LINE 分享格式
+- 已加入 Classic / Timeline / Compact 三種海報模板
+- 已加入 gzip 分享連結壓縮，並保留舊版分享連結讀取相容
+- 已執行靜態差異檢查；目前 shell 找不到 `node` / `npm`，尚無法執行 Next.js 建置驗證
 
 ### 尚未完成項目
 
-- Excel xlsx 匯出
-- Google Calendar / iCal 匯出
-- LINE 分享格式
-- 海報模板選擇
-- 分享連結壓縮
+- 無
 
 ## Phase 6：預算與旅行資訊管理
 
@@ -411,15 +416,16 @@
 - 已新增 `utils/time.ts`
 - 已將 `addMinutes`、`parseDur`、`formatMinutes`、`timeToMinutes`、`crossesTimeWindow`、`buildSchedule` 抽出
 - `app/page.tsx` 已改為匯入共用型別與時間工具
+- 已在 Phase 5 抽出 `components/ExportDialog.tsx`
+- 已在 Phase 5 抽出 `components/PosterRender.tsx`
+- 已在 Phase 5 抽出 `utils/export.ts`
 
 ### 尚未完成項目
 
 - 抽出 `components/ItineraryItem.tsx`
 - 抽出 `components/MapView.tsx`
-- 抽出 `components/ExportDialog.tsx`
 - 抽出 `hooks/useItinerary.ts`
 - 抽出 `utils/share.ts`
-- 抽出 `utils/export.ts`
 - 抽出 `utils/storage.ts`
 - 建立時間計算與分享編碼測試
 
@@ -467,15 +473,15 @@ types/
 
 ## 建議開發順序
 
-目前 Phase 1、Phase 2、Phase 3、Phase 4 已完成；Phase 5 已完成第一批功能。後續建議順序如下：
+目前 Phase 1、Phase 2、Phase 3、Phase 4、Phase 5 已完成。後續建議順序如下：
 
-1. Phase 9：繼續拆分 `ExportDialog`、分享、storage 邏輯
+1. Phase 9：繼續拆分行程卡片、地圖、分享與 storage 邏輯
 2. Phase 6：預算與旅行資訊管理
 3. Phase 7：AI 智慧規劃
 4. Phase 8：協作與雲端同步
 5. Phase 9：補時間計算單元測試
 
-若以長期產品化為目標，建議在 Phase 5 前先做 Phase 9 的部分重構，避免 `app/page.tsx` 持續膨脹。
+若以長期產品化為目標，建議下一輪持續做 Phase 9 重構，避免 `app/page.tsx` 再度膨脹。
 
 ## 第一輪最推薦實作範圍
 

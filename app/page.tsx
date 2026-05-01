@@ -4,6 +4,8 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { GoogleMap, LoadScript, Marker, DirectionsRenderer, Autocomplete, StreetViewPanorama } from '@react-google-maps/api'
 import html2canvas from 'html2canvas'
 import dynamic from 'next/dynamic'
+import ExportDialog from '../components/ExportDialog'
+import PosterRender from '../components/PosterRender'
 import {
   DndContext,
   closestCenter,
@@ -22,6 +24,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { DayPlan, ItineraryItem } from '../types/itinerary'
+import { buildCsv, buildGoogleCalendarUrl, buildIcs, buildLineShareText, buildTextSummary, buildXlsxBlob, decodeSharePayload, encodeSharePayload, type PosterTemplate } from '../utils/export'
 import { buildSchedule, crossesTimeWindow, formatMinutes, getWeekdayIndex, isWithinOpeningHours, parseDur, weekdayToGoogleIndex } from '../utils/time'
 
 const getWeatherIcon = (code?: number) => {
@@ -48,8 +51,6 @@ interface ToastMessage {
 }
 
 const STORAGE_KEY = 'travel-architect-plan-v1'
-
-const csvCell = (value?: string | number) => `"${String(value ?? '').replace(/"/g, '""')}"`
 
 const defaultCenter = { lat: 25.0330, lng: 121.5654 }
 
@@ -148,6 +149,7 @@ function HomeContent() {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [showExportDialog, setShowExportDialog] = useState(false)
   const [exportScope, setExportScope] = useState<ExportScope>('all')
+  const [posterTemplate, setPosterTemplate] = useState<PosterTemplate>('classic')
   const [showOverview, setShowOverview] = useState(false)
   const [showCustomItemForm, setShowCustomItemForm] = useState(false)
   const [customItemType, setCustomItemType] = useState<CustomItemType>('place')
@@ -325,37 +327,26 @@ function HomeContent() {
     setLoading(false)
   }
 
-  const generateShareLink = () => {
+  const downloadBlob = (filename: string, blob: Blob) => {
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = filename
+    link.click()
+    URL.revokeObjectURL(link.href)
+  }
+
+  const generateShareLink = async () => {
     try {
-      const simplified = days.map(d => ({ t: d.title, s: d.startTime, dt: d.date, no: d.notes, i: d.items.map(item => ({ p: item.id, n: item.name, a: item.address, lt: item.lat, lg: item.lng, no: item.notes, sd: item.stayDuration, ty: item.type })) }))
-      const encoded = btoa(encodeURIComponent(JSON.stringify({ d: simplified, m: travelMode })))
+      const encoded = await encodeSharePayload(days, travelMode)
       return `${window.location.origin}${window.location.pathname}?plan=${encoded}`
     } catch (e) { return null }
   }
 
   const getExportDays = () => exportScope === 'active' ? [activeDay] : days
 
-  const generateTextSummary = (targetDays = getExportDays()) => {
-    return targetDays.map(day => {
-      const daySchedule = buildSchedule(day)
-      const lines = [
-        `${day.title}｜出發 ${day.startTime || '09:00'}`,
-        day.notes ? `備註：${day.notes}` : '',
-        ...day.items.map((item, idx) => {
-          const slot = daySchedule[idx]
-          const stay = formatMinutes(item.stayDuration || 60)
-          const travel = item.travelTime ? `｜下一站 ${item.travelTime}` : ''
-          const note = item.notes ? `\n  備註：${item.notes}` : ''
-          return `${idx + 1}. ${slot?.start || ''}-${slot?.end || ''} ${item.name}｜停留 ${stay}${travel}\n  ${item.address}${note}`
-        }),
-      ].filter(Boolean)
-      return lines.join('\n')
-    }).join('\n\n')
-  }
-
   const copyTextSummary = async () => {
     try {
-      await navigator.clipboard.writeText(generateTextSummary())
+      await navigator.clipboard.writeText(buildTextSummary(getExportDays()))
       showToast('文字版行程摘要已複製。', 'success')
     } catch (e) {
       showToast('無法複製文字摘要，請檢查瀏覽器權限。', 'error')
@@ -363,28 +354,34 @@ function HomeContent() {
   }
 
   const exportCsv = () => {
-    const header = ['Day', 'Start', 'End', 'Place', 'Address', 'StayMinutes', 'TravelToNext', 'Notes']
-    const rows = getExportDays().flatMap(day => {
-      const daySchedule = buildSchedule(day)
-      return day.items.map((item, idx) => [
-        day.title,
-        daySchedule[idx]?.start,
-        daySchedule[idx]?.end,
-        item.name,
-        item.address,
-        item.stayDuration || 60,
-        item.travelTime || '',
-        item.notes || '',
-      ])
-    })
-    const csv = [header, ...rows].map(row => row.map(csvCell).join(',')).join('\n')
-    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' })
-    const link = document.createElement('a')
-    link.href = URL.createObjectURL(blob)
-    link.download = 'TravelPlan.csv'
-    link.click()
-    URL.revokeObjectURL(link.href)
+    downloadBlob('TravelPlan.csv', new Blob([`\uFEFF${buildCsv(getExportDays())}`], { type: 'text/csv;charset=utf-8' }))
     showToast('CSV 行程已匯出。', 'success')
+  }
+
+  const exportXlsx = () => {
+    downloadBlob('TravelPlan.xlsx', buildXlsxBlob(getExportDays()))
+    showToast('Excel xlsx 行程已匯出。', 'success')
+  }
+
+  const exportIcs = () => {
+    downloadBlob('TravelPlan.ics', new Blob([buildIcs(getExportDays())], { type: 'text/calendar;charset=utf-8' }))
+    showToast('iCal 行程已匯出。', 'success')
+  }
+
+  const openGoogleCalendar = () => {
+    const url = buildGoogleCalendarUrl(getExportDays())
+    if (!url) {
+      showToast('目前沒有可加入 Google Calendar 的行程。', 'info')
+      return
+    }
+    window.open(url, '_blank')
+    showToast('已開啟 Google Calendar 新增事件視窗。', 'success')
+  }
+
+  const shareLine = () => {
+    const text = buildLineShareText(getExportDays())
+    window.open(`https://social-plugins.line.me/lineit/share?text=${encodeURIComponent(text)}`, '_blank')
+    showToast('已開啟 LINE 分享格式。', 'success')
   }
 
   const exportPdf = () => {
@@ -482,42 +479,48 @@ function HomeContent() {
   }
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search); const planData = params.get('plan')
-    if (planData) {
-      let loadedFromPlan = false
-      try {
-        const decoded = JSON.parse(decodeURIComponent(atob(planData)))
-        setDays(decoded.d.map((day: any, idx: number) => ({ id: `day-${idx + 1}`, title: day.t, startTime: day.s || '09:00', date: day.dt, notes: day.no, items: day.i.map((item: any) => ({ id: item.p, name: item.n, address: item.a, lat: item.lt, lng: item.lg, notes: item.no, stayDuration: item.sd, type: item.ty })) })))
-        setActiveDayId('day-1')
-        setTravelMode(decoded.m || 'DRIVING'); window.history.replaceState({}, '', window.location.pathname)
-        showToast('已載入分享行程。', 'success')
-        loadedFromPlan = true
-      } catch (e) {
-        showToast('分享連結無法讀取，已改用本機保存行程。', 'error')
-      }
+    const loadSavedPlan = async () => {
+      const params = new URLSearchParams(window.location.search)
+      const planData = params.get('plan')
+      if (planData) {
+        let loadedFromPlan = false
+        try {
+          const decoded = await decodeSharePayload(planData)
+          setDays(decoded.d.map((day: any, idx: number) => ({ id: `day-${idx + 1}`, title: day.t, startTime: day.s || '09:00', date: day.dt, notes: day.no, items: day.i.map((item: any) => ({ id: item.p, name: item.n, address: item.a, lat: item.lt, lng: item.lg, notes: item.no, stayDuration: item.sd, type: item.ty })) })))
+          setActiveDayId('day-1')
+          setTravelMode(decoded.m || 'DRIVING')
+          window.history.replaceState({}, '', window.location.pathname)
+          showToast('已載入分享行程。', 'success')
+          loadedFromPlan = true
+        } catch (e) {
+          showToast('分享連結無法讀取，已改用本機保存行程。', 'error')
+        }
 
-      if (loadedFromPlan) {
-        setHasRestored(true)
-        return
-      }
-    }
-
-    try {
-      const saved = window.localStorage.getItem(STORAGE_KEY)
-      if (saved) {
-        const decoded = JSON.parse(saved)
-        if (Array.isArray(decoded.days) && decoded.days.length > 0) {
-          setDays(decoded.days)
-          setActiveDayId(decoded.activeDayId || decoded.days[0].id)
-          setTravelMode(decoded.travelMode || 'DRIVING')
-          showToast('已復原上次編輯的行程。', 'success')
+        if (loadedFromPlan) {
+          setHasRestored(true)
+          return
         }
       }
-    } catch (e) {
-      showToast('本機行程資料讀取失敗，已使用新的空白行程。', 'error')
-    } finally {
-      setHasRestored(true)
+
+      try {
+        const saved = window.localStorage.getItem(STORAGE_KEY)
+        if (saved) {
+          const decoded = JSON.parse(saved)
+          if (Array.isArray(decoded.days) && decoded.days.length > 0) {
+            setDays(decoded.days)
+            setActiveDayId(decoded.activeDayId || decoded.days[0].id)
+            setTravelMode(decoded.travelMode || 'DRIVING')
+            showToast('已復原上次編輯的行程。', 'success')
+          }
+        }
+      } catch (e) {
+        showToast('本機行程資料讀取失敗，已使用新的空白行程。', 'error')
+      } finally {
+        setHasRestored(true)
+      }
     }
+
+    loadSavedPlan()
   }, [showToast])
 
   useEffect(() => {
@@ -722,27 +725,21 @@ function HomeContent() {
           </div>
         )}
         {showExportDialog && (
-          <div className="modal-backdrop" role="presentation" onClick={() => setShowExportDialog(false)}>
-            <section className="export-dialog" role="dialog" aria-modal="true" aria-labelledby="export-title" onClick={(e) => e.stopPropagation()}>
-              <div className="export-dialog-header">
-                <div>
-                  <h2 id="export-title">匯出行程</h2>
-                  <p>選擇單日或全部天數，再輸出成需要的格式。</p>
-                </div>
-                <button className="dialog-close" onClick={() => setShowExportDialog(false)}>×</button>
-              </div>
-              <div className="export-scope">
-                <button className={exportScope === 'active' ? 'active' : ''} onClick={() => setExportScope('active')}>目前 Day</button>
-                <button className={exportScope === 'all' ? 'active' : ''} onClick={() => setExportScope('all')}>全部天數</button>
-              </div>
-              <div className="export-actions">
-                <button onClick={copyTextSummary}>複製文字摘要</button>
-                <button onClick={exportCsv}>匯出 CSV</button>
-                <button onClick={exportPdf}>列印 / PDF</button>
-                <button onClick={exportPoster}>海報 PNG</button>
-              </div>
-            </section>
-          </div>
+          <ExportDialog
+            exportScope={exportScope}
+            posterTemplate={posterTemplate}
+            onScopeChange={setExportScope}
+            onPosterTemplateChange={setPosterTemplate}
+            onClose={() => setShowExportDialog(false)}
+            onCopyText={copyTextSummary}
+            onExportCsv={exportCsv}
+            onExportXlsx={exportXlsx}
+            onExportIcs={exportIcs}
+            onOpenGoogleCalendar={openGoogleCalendar}
+            onShareLine={shareLine}
+            onExportPdf={exportPdf}
+            onExportPoster={exportPoster}
+          />
         )}
         {showOverview && (
           <div className="modal-backdrop" role="presentation" onClick={() => setShowOverview(false)}>
@@ -793,7 +790,7 @@ function HomeContent() {
             <div style={{ display: 'flex', gap: '8px' }}>
               {installPrompt && <button className="btn-outline install-button" onClick={installPwa}>安裝</button>}
               <button className="btn-outline export-button" onClick={() => setShowExportDialog(true)}>匯出</button>
-              <button className="btn-outline" onClick={async () => { const link = generateShareLink(); if (!link) { showToast('分享連結產生失敗。', 'error'); return } try { await navigator.clipboard.writeText(link); showToast('分享連結已複製。', 'success') } catch (e) { showToast('無法複製到剪貼簿，請檢查瀏覽器權限。', 'error') } }}><IconShare /></button>
+              <button className="btn-outline" onClick={async () => { const link = await generateShareLink(); if (!link) { showToast('分享連結產生失敗。', 'error'); return } try { await navigator.clipboard.writeText(link); showToast('壓縮分享連結已複製。', 'success') } catch (e) { showToast('無法複製到剪貼簿，請檢查瀏覽器權限。', 'error') } }}><IconShare /></button>
             </div>
           </header>
           <div className="search-container"><Autocomplete onLoad={setAutocomplete} onPlaceChanged={onPlaceChanged}><input type="text" className="search-input" placeholder="您想去哪裡？" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} /></Autocomplete></div>
@@ -863,7 +860,9 @@ function HomeContent() {
             {showStreetView && streetViewPos && (<StreetViewPanorama options={{ position: streetViewPos, visible: showStreetView }} onCloseclick={() => setShowStreetView(false)} />)}
           </GoogleMap>
         </section>
-        <div style={{ position: 'absolute', left: '-9999px', top: 0 }}><div ref={posterRef} style={{ width: '500px', padding: '40px', background: '#0a0a0c', color: '#fff', fontFamily: 'var(--font-body)' }}><h1 style={{ fontFamily: 'var(--font-display)', fontSize: '3rem', marginBottom: '8px' }}>Travel Plan</h1><p style={{ color: 'rgba(255,255,255,0.5)', marginBottom: '40px' }}>{activeDay.title} · Crafted by Travel Architect</p>{itinerary.map((item, idx) => (<div key={item.id} style={{ marginBottom: '24px', display: 'flex', gap: '20px', alignItems: 'center' }}><div style={{ width: '80px', height: '80px', borderRadius: '12px', overflow: 'hidden' }}>{item.photoUrl && <img src={item.photoUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}</div><div><div style={{ fontSize: '0.8rem', fontWeight: '800', color: '#3b82f6' }}>{schedule[idx]?.start} - {schedule[idx]?.end}</div><h3 style={{ fontSize: '1.2rem', margin: '4px 0' }}>{item.name}</h3><p style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)' }}>{item.address}</p></div></div>))}</div></div>
+        <div style={{ position: 'absolute', left: '-9999px', top: 0 }}>
+          <PosterRender ref={posterRef} activeDay={activeDay} itinerary={itinerary} schedule={schedule} posterTemplate={posterTemplate} />
+        </div>
         <nav className="mobile-switcher" aria-label="手機版檢視切換">
           <button className={mobileView === 'plan' ? 'active' : ''} onClick={() => setMobileView('plan')}>行程</button>
           <button className={mobileView === 'map' ? 'active' : ''} onClick={() => setMobileView('map')}>地圖</button>
