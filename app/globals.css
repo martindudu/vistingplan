@@ -66,6 +66,63 @@ body::after {
   background: transparent;
 }
 
+.toast-stack {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(360px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.toast {
+  padding: 14px 16px;
+  border: 1px solid var(--glass-border);
+  border-left: 4px solid var(--accent);
+  border-radius: 12px;
+  background: rgba(10, 10, 12, 0.86);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow: var(--glass-shadow);
+  color: var(--text-main);
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.toast-success {
+  border-left-color: var(--success);
+}
+
+.toast-error {
+  border-left-color: var(--danger);
+}
+
+.toast-info {
+  border-left-color: var(--accent);
+}
+
+.api-warning {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1900;
+  max-width: min(720px, calc(100vw - 32px));
+  padding: 12px 18px;
+  border: 1px solid rgba(255, 77, 77, 0.28);
+  border-radius: 12px;
+  background: rgba(50, 12, 16, 0.88);
+  color: #fff;
+  box-shadow: var(--glass-shadow);
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-align: center;
+}
+
 @media (max-width: 1200px) {
   .main-layout { grid-template-columns: 480px 1fr; }
 }
@@ -182,14 +239,21 @@ body::after {
 .day-tabs {
   display: flex;
   gap: 8px;
-  margin-bottom: 32px;
+  margin-bottom: 12px;
   padding: 6px;
   background: rgba(255,255,255,0.03);
   border-radius: 14px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.day-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .day-tab-btn {
   flex: 1;
+  min-width: 86px;
   padding: 12px;
   border: none;
   border-radius: 10px;
@@ -205,6 +269,62 @@ body::after {
   background: var(--accent);
   color: #fff;
   box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
+}
+
+.day-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 10px;
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.03);
+}
+
+.day-editor input {
+  min-width: 0;
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  padding: 0 12px;
+  background: rgba(255,255,255,0.04);
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 800;
+  font-family: var(--font-body);
+}
+
+.day-editor input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.day-editor .btn-outline {
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.item-day-tools {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.item-day-tools select {
+  min-width: 0;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(255,255,255,0.05);
+  color: #fff;
+  font-size: 0.75rem;
+  font-family: var(--font-body);
+}
+
+.item-day-tools option {
+  color: #000;
 }
 
 /* 動作按鈕 */
@@ -241,6 +361,20 @@ body::after {
 .btn-outline:hover {
   background: rgba(255,255,255,0.1);
   border-color: #fff;
+}
+
+.action-bar {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.action-bar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 52px;
 }
 
 /* 地圖標籤客製化 */
@@ -289,4 +423,23 @@ body::after {
 /* 修復地圖容器在手機上的顯示 */
 @media (max-width: 1024px) {
   .map-viewport { height: 50vh; }
+
+  .toast-stack {
+    top: 16px;
+    right: 16px;
+  }
+
+  .api-warning {
+    top: auto;
+    bottom: 16px;
+  }
+
+  .day-editor {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .day-editor input {
+    grid-column: 1 / -1;
+    min-height: 42px;
+  }
 }
