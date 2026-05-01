@@ -66,6 +66,10 @@ body::after {
   background: transparent;
 }
 
+.mobile-switcher {
+  display: none;
+}
+
 .toast-stack {
   position: fixed;
   top: 24px;
@@ -123,12 +127,101 @@ body::after {
   text-align: center;
 }
 
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2300;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.54);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.export-dialog {
+  width: min(480px, 100%);
+  border: 1px solid var(--glass-border);
+  border-radius: 18px;
+  background: rgba(10, 10, 12, 0.94);
+  box-shadow: var(--glass-shadow);
+  padding: 22px;
+}
+
+.export-dialog-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.export-dialog h2 {
+  margin: 0 0 6px;
+  color: #fff;
+  font-size: 1.25rem;
+}
+
+.export-dialog p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.dialog-close {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.05);
+  color: #fff;
+  cursor: pointer;
+  font-size: 1.1rem;
+}
+
+.export-scope {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 6px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.04);
+  margin-bottom: 14px;
+}
+
+.export-scope button,
+.export-actions button {
+  border: none;
+  border-radius: 10px;
+  padding: 12px;
+  color: #fff;
+  background: rgba(255,255,255,0.06);
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-weight: 800;
+}
+
+.export-scope button.active {
+  background: var(--accent);
+  box-shadow: 0 4px 15px rgba(59, 130, 246, 0.35);
+}
+
+.export-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
 @media (max-width: 1200px) {
   .main-layout { grid-template-columns: 480px 1fr; }
 }
 
 @media (max-width: 1024px) {
-  .main-layout { grid-template-columns: 1fr; overflow-y: auto; }
+  .main-layout {
+    grid-template-columns: 1fr;
+    height: 100dvh;
+    overflow: hidden;
+  }
 }
 
 /* 醒目的天氣標籤 */
@@ -175,6 +268,11 @@ body::after {
   color: var(--text-dim);
   font-size: 0.9rem;
   margin-bottom: 40px;
+}
+
+.header > div:last-child {
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 /* 搜尋框設計 */
@@ -233,6 +331,13 @@ body::after {
   font-size: 0.8rem;
   font-weight: 700;
   margin-top: 16px;
+}
+
+.opening-hours {
+  margin-top: 10px;
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  line-height: 1.45;
 }
 
 /* 天數標籤 */
@@ -327,6 +432,77 @@ body::after {
   color: #000;
 }
 
+.day-notes {
+  width: 100%;
+  margin-bottom: 16px;
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(255,255,255,0.04);
+  color: #fff;
+  resize: vertical;
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+}
+
+.day-notes:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.summary-panel {
+  margin-bottom: 20px;
+  padding: 14px;
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.035);
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.summary-grid div {
+  min-width: 0;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.04);
+}
+
+.summary-grid span {
+  display: block;
+  color: var(--text-dim);
+  font-size: 0.68rem;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.summary-grid strong {
+  display: block;
+  color: #fff;
+  font-size: 0.88rem;
+  line-height: 1.25;
+}
+
+.summary-warnings {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.summary-warnings div {
+  padding: 10px 12px;
+  border: 1px solid rgba(245, 158, 11, 0.26);
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.08);
+  color: #fbbf24;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
 /* 動作按鈕 */
 .btn-primary {
   background: #fff;
@@ -361,6 +537,19 @@ body::after {
 .btn-outline:hover {
   background: rgba(255,255,255,0.1);
   border-color: #fff;
+}
+
+.install-button {
+  min-width: 58px;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.export-button {
+  min-width: 54px;
+  padding-inline: 12px;
+  font-size: 0.78rem;
+  font-weight: 800;
 }
 
 .action-bar {
@@ -422,7 +611,68 @@ body::after {
 
 /* 修復地圖容器在手機上的顯示 */
 @media (max-width: 1024px) {
-  .map-viewport { height: 50vh; }
+  .sidebar {
+    height: 100dvh;
+    padding: 28px 20px 104px;
+  }
+
+  .map-viewport {
+    height: 100dvh;
+    min-height: 100dvh;
+  }
+
+  .mobile-view-plan .map-viewport {
+    display: none;
+  }
+
+  .mobile-view-map .sidebar {
+    display: none;
+  }
+
+  .mobile-switcher {
+    position: fixed;
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    z-index: 2100;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1.25fr;
+    gap: 8px;
+    padding: 8px;
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    background: rgba(10, 10, 12, 0.88);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    box-shadow: var(--glass-shadow);
+  }
+
+  .mobile-switcher button {
+    min-height: 44px;
+    border: none;
+    border-radius: 11px;
+    background: rgba(255,255,255,0.05);
+    color: var(--text-dim);
+    font-family: var(--font-body);
+    font-size: 0.82rem;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    cursor: pointer;
+  }
+
+  .mobile-switcher button.active {
+    background: var(--accent);
+    color: #fff;
+    box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
+  }
+
+  .mobile-switcher button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
 
   .toast-stack {
     top: 16px;
@@ -431,7 +681,7 @@ body::after {
 
   .api-warning {
     top: auto;
-    bottom: 16px;
+    bottom: 88px;
   }
 
   .day-editor {
@@ -441,5 +691,76 @@ body::after {
   .day-editor input {
     grid-column: 1 / -1;
     min-height: 42px;
+  }
+
+  .summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .modal-backdrop {
+    align-items: end;
+    padding: 16px 16px 88px;
+  }
+
+  .export-dialog {
+    padding: 18px;
+    border-radius: 16px;
+  }
+
+  .export-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .itinerary-item {
+    display: flex;
+    gap: 12px;
+    padding: 14px;
+    border-radius: 14px;
+    margin-bottom: 10px;
+  }
+
+  .itinerary-item:hover {
+    transform: none;
+  }
+
+  .item-photo-box {
+    width: 72px;
+    height: 72px;
+    flex: 0 0 72px;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .card-accent {
+    display: none;
+  }
+
+  .item-details {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .item-name {
+    font-size: 1.08rem;
+    line-height: 1.1;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .weather-tag {
+    padding: 3px 8px;
+    font-size: 0.72rem;
+  }
+
+  .travel-badge,
+  .opening-hours {
+    font-size: 0.68rem;
+    margin-top: 8px;
+  }
+
+  .item-day-tools {
+    grid-template-columns: 1fr;
   }
 }

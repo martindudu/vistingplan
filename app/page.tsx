@@ -21,25 +21,8 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-
-interface Place {
-  id: string
-  name: string
-  address: string
-  lat: number
-  lng: number
-}
-
-interface ItineraryItem extends Place {
-  travelTime?: string
-  photoUrl?: string
-  rating?: number
-  userRatingsTotal?: number
-  openingHours?: string[]
-  notes?: string
-  stayDuration?: number
-  weather?: { temp: number, code: number }
-}
+import type { DayPlan, ItineraryItem } from '../types/itinerary'
+import { buildSchedule, crossesTimeWindow, formatMinutes, parseDur } from '../utils/time'
 
 const getWeatherIcon = (code?: number) => {
   if (code === undefined) return '☀️'
@@ -49,14 +32,13 @@ const getWeatherIcon = (code?: number) => {
   return '❄️'
 }
 
-interface DayPlan {
-  id: string
-  title: string
-  items: ItineraryItem[]
-  startTime?: string
-}
-
 type ToastType = 'success' | 'error' | 'info'
+type MobileView = 'plan' | 'map'
+type ExportScope = 'active' | 'all'
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
+}
 
 interface ToastMessage {
   id: string
@@ -66,18 +48,7 @@ interface ToastMessage {
 
 const STORAGE_KEY = 'travel-architect-plan-v1'
 
-const addMinutes = (time: string, mins: number) => {
-  if (!time) return '09:00'
-  const [h, m] = time.split(':').map(Number)
-  const d = new Date(); d.setHours(h, m + mins)
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
-const parseDur = (t?: string) => {
-  if (!t) return 0
-  const m = t.match(/(\d+)\s*(h|m)/gi); let total = 0
-  m?.forEach(x => { const v = parseInt(x); if (x.includes('h')) total += v * 60; else total += v })
-  return total || 30
-}
+const csvCell = (value?: string | number) => `"${String(value ?? '').replace(/"/g, '""')}"`
 
 const defaultCenter = { lat: 25.0330, lng: 121.5654 }
 
@@ -145,6 +116,7 @@ function SortableItem({ item, days, activeDayId, onDelete, onUpdate, onMoveToDay
           )}
         </div>
         {item.travelTime && (<div className="travel-badge"><IconClock /> 下一站: {item.travelTime}</div>)}
+        {item.openingHours?.[0] && <div className="opening-hours">營業時間：{item.openingHours[0]}</div>}
       </div>
     </div>
   )
@@ -166,6 +138,10 @@ function HomeContent() {
   const [streetViewPos, setStreetViewPos] = useState<{lat: number, lng: number} | null>(null)
   const [toasts, setToasts] = useState<ToastMessage[]>([])
   const [hasRestored, setHasRestored] = useState(false)
+  const [mobileView, setMobileView] = useState<MobileView>('plan')
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
+  const [showExportDialog, setShowExportDialog] = useState(false)
+  const [exportScope, setExportScope] = useState<ExportScope>('all')
   const mapRef = useRef<google.maps.Map | null>(null)
   const directionsServiceRef = useRef<google.maps.DirectionsService | null>(null)
   const posterRef = useRef<HTMLDivElement>(null)
@@ -197,12 +173,26 @@ function HomeContent() {
   const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }))
 
   const schedule = useMemo(() => {
-    return itinerary.reduce((acc: { start: string, end: string }[], item, idx) => {
-      const start = idx === 0 ? (activeDay.startTime || '09:00') : addMinutes(acc[idx - 1].end, parseDur(itinerary[idx - 1].travelTime))
-      const end = addMinutes(start, item.stayDuration || 60)
-      acc.push({ start, end }); return acc
-    }, [])
-  }, [itinerary, activeDay.startTime])
+    return buildSchedule(activeDay)
+  }, [activeDay])
+
+  const itinerarySummary = useMemo(() => {
+    const totalStay = itinerary.reduce((sum, item) => sum + (item.stayDuration || 60), 0)
+    const totalTravel = itinerary.reduce((sum, item) => sum + (item.travelTime ? parseDur(item.travelTime) : 0), 0)
+    const endTime = schedule[schedule.length - 1]?.end || activeDay.startTime || '09:00'
+    const daySpan = schedule.length ? totalStay + totalTravel : 0
+    const textForMealCheck = itinerary.map(item => `${item.name} ${item.notes || ''}`).join(' ')
+    const hasMealStop = /(餐|食|飯|咖啡|茶|restaurant|cafe|lunch|dinner)/i.test(textForMealCheck)
+    const warnings: string[] = []
+
+    if (itinerary.length >= 6) warnings.push('今日景點偏多，建議保留交通緩衝。')
+    if (daySpan > 720) warnings.push('今日行程超過 12 小時，可能會太緊。')
+    if (itinerary.length >= 2 && totalTravel === 0) warnings.push('路線時間尚未完整計算，總時長可能偏低。')
+    if (!hasMealStop && schedule.some(slot => crossesTimeWindow(slot.start, slot.end, 720, 810))) warnings.push('行程跨過午餐時段，可考慮安排用餐。')
+    if (!hasMealStop && schedule.some(slot => crossesTimeWindow(slot.start, slot.end, 1080, 1170))) warnings.push('行程跨過晚餐時段，可考慮安排用餐。')
+
+    return { totalStay, totalTravel, endTime, daySpan, warnings }
+  }, [itinerary, schedule, activeDay.startTime])
 
   const fetchWeather = async (lat: number, lng: number) => {
     try {
@@ -222,7 +212,7 @@ function HomeContent() {
     const weather = await fetchWeather(lat, lng)
     return new Promise((resolve) => {
       service.getDetails({ placeId, fields: ['photos', 'rating', 'opening_hours'] }, (p, status) => {
-        if (status === 'OK' && p) resolve({ photoUrl: p.photos?.[0]?.getUrl({ maxWidth: 200 }), rating: p.rating, weather })
+        if (status === 'OK' && p) resolve({ photoUrl: p.photos?.[0]?.getUrl({ maxWidth: 200 }), rating: p.rating, openingHours: p.opening_hours?.weekday_text, weather })
         else resolve({ weather })
       })
     })
@@ -295,10 +285,143 @@ function HomeContent() {
 
   const generateShareLink = () => {
     try {
-      const simplified = days.map(d => ({ t: d.title, s: d.startTime, i: d.items.map(item => ({ p: item.id, n: item.name, a: item.address, lt: item.lat, lg: item.lng, no: item.notes, sd: item.stayDuration })) }))
+      const simplified = days.map(d => ({ t: d.title, s: d.startTime, no: d.notes, i: d.items.map(item => ({ p: item.id, n: item.name, a: item.address, lt: item.lat, lg: item.lng, no: item.notes, sd: item.stayDuration })) }))
       const encoded = btoa(encodeURIComponent(JSON.stringify({ d: simplified, m: travelMode })))
       return `${window.location.origin}${window.location.pathname}?plan=${encoded}`
     } catch (e) { return null }
+  }
+
+  const getExportDays = () => exportScope === 'active' ? [activeDay] : days
+
+  const generateTextSummary = (targetDays = getExportDays()) => {
+    return targetDays.map(day => {
+      const daySchedule = buildSchedule(day)
+      const lines = [
+        `${day.title}｜出發 ${day.startTime || '09:00'}`,
+        day.notes ? `備註：${day.notes}` : '',
+        ...day.items.map((item, idx) => {
+          const slot = daySchedule[idx]
+          const stay = formatMinutes(item.stayDuration || 60)
+          const travel = item.travelTime ? `｜下一站 ${item.travelTime}` : ''
+          const note = item.notes ? `\n  備註：${item.notes}` : ''
+          return `${idx + 1}. ${slot?.start || ''}-${slot?.end || ''} ${item.name}｜停留 ${stay}${travel}\n  ${item.address}${note}`
+        }),
+      ].filter(Boolean)
+      return lines.join('\n')
+    }).join('\n\n')
+  }
+
+  const copyTextSummary = async () => {
+    try {
+      await navigator.clipboard.writeText(generateTextSummary())
+      showToast('文字版行程摘要已複製。', 'success')
+    } catch (e) {
+      showToast('無法複製文字摘要，請檢查瀏覽器權限。', 'error')
+    }
+  }
+
+  const exportCsv = () => {
+    const header = ['Day', 'Start', 'End', 'Place', 'Address', 'StayMinutes', 'TravelToNext', 'Notes']
+    const rows = getExportDays().flatMap(day => {
+      const daySchedule = buildSchedule(day)
+      return day.items.map((item, idx) => [
+        day.title,
+        daySchedule[idx]?.start,
+        daySchedule[idx]?.end,
+        item.name,
+        item.address,
+        item.stayDuration || 60,
+        item.travelTime || '',
+        item.notes || '',
+      ])
+    })
+    const csv = [header, ...rows].map(row => row.map(csvCell).join(',')).join('\n')
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = 'TravelPlan.csv'
+    link.click()
+    URL.revokeObjectURL(link.href)
+    showToast('CSV 行程已匯出。', 'success')
+  }
+
+  const exportPdf = () => {
+    const printableDays = getExportDays()
+    const htmlMap: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
+    const escapeHtml = (value?: string | number) => String(value ?? '').replace(/[&<>"']/g, char => htmlMap[char] || char)
+    const body = printableDays.map(day => {
+      const daySchedule = buildSchedule(day)
+      const items = day.items.map((item, idx) => {
+        const slot = daySchedule[idx]
+        return `
+          <section class="item">
+            <div class="time">${escapeHtml(slot?.start)} - ${escapeHtml(slot?.end)}</div>
+            <div>
+              <h2>${escapeHtml(item.name)}</h2>
+              <p>${escapeHtml(item.address)}</p>
+              <small>停留 ${escapeHtml(formatMinutes(item.stayDuration || 60))}${item.travelTime ? ` · 下一站 ${escapeHtml(item.travelTime)}` : ''}</small>
+              ${item.notes ? `<p class="note">${escapeHtml(item.notes)}</p>` : ''}
+            </div>
+          </section>
+        `
+      }).join('')
+      return `
+        <article class="day">
+          <h1>${escapeHtml(day.title)}</h1>
+          <p class="meta">出發 ${escapeHtml(day.startTime || '09:00')}</p>
+          ${day.notes ? `<p class="note">${escapeHtml(day.notes)}</p>` : ''}
+          ${items || '<p class="empty">暫無行程</p>'}
+        </article>
+      `
+    }).join('')
+    const printWindow = window.open('', '_blank')
+    if (!printWindow) {
+      showToast('無法開啟 PDF 列印視窗，請檢查瀏覽器彈窗權限。', 'error')
+      return
+    }
+    printWindow.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <title>Travel Plan</title>
+          <style>
+            body { margin: 40px; color: #161616; font-family: Arial, sans-serif; }
+            .day { page-break-after: always; }
+            .day:last-child { page-break-after: auto; }
+            h1 { font-size: 32px; margin: 0 0 4px; }
+            .meta, .note, .empty { color: #666; }
+            .item { display: grid; grid-template-columns: 110px 1fr; gap: 20px; padding: 18px 0; border-top: 1px solid #ddd; }
+            .time { color: #2563eb; font-weight: 800; }
+            h2 { margin: 0 0 6px; font-size: 20px; }
+            p { margin: 0 0 6px; line-height: 1.5; }
+            small { color: #444; font-weight: 700; }
+            @media print { body { margin: 24px; } }
+          </style>
+        </head>
+        <body>${body}</body>
+      </html>
+    `)
+    printWindow.document.close()
+    printWindow.focus()
+    printWindow.print()
+    showToast('PDF 列印視窗已開啟，可選擇另存成 PDF。', 'success')
+  }
+
+  const exportPoster = async () => {
+    if (!posterRef.current) return
+    setLoading(true)
+    try {
+      const canvas = await html2canvas(posterRef.current, { useCORS: true, backgroundColor: '#0a0a0c' })
+      const link = document.createElement('a')
+      link.download = 'TravelPlan.png'
+      link.href = canvas.toDataURL()
+      link.click()
+      showToast('海報已匯出。', 'success')
+    } catch (e) {
+      showToast('海報匯出失敗，請稍後再試。', 'error')
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => {
@@ -307,7 +430,7 @@ function HomeContent() {
       let loadedFromPlan = false
       try {
         const decoded = JSON.parse(decodeURIComponent(atob(planData)))
-        setDays(decoded.d.map((day: any, idx: number) => ({ id: `day-${idx + 1}`, title: day.t, startTime: day.s || '09:00', items: day.i.map((item: any) => ({ id: item.p, name: item.n, address: item.a, lat: item.lt, lng: item.lg, notes: item.no, stayDuration: item.sd })) })))
+        setDays(decoded.d.map((day: any, idx: number) => ({ id: `day-${idx + 1}`, title: day.t, startTime: day.s || '09:00', notes: day.no, items: day.i.map((item: any) => ({ id: item.p, name: item.n, address: item.a, lat: item.lt, lng: item.lg, notes: item.no, stayDuration: item.sd })) })))
         setActiveDayId('day-1')
         setTravelMode(decoded.m || 'DRIVING'); window.history.replaceState({}, '', window.location.pathname)
         showToast('已載入分享行程。', 'success')
@@ -352,6 +475,30 @@ function HomeContent() {
   useEffect(() => {
     if (!apiKey) showToast('尚未設定 Google Maps API Key，地圖與搜尋功能可能無法使用。', 'error')
   }, [apiKey, showToast])
+
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/service-worker.js').catch(() => {
+        showToast('離線快取啟用失敗，仍可正常線上使用。', 'info')
+      })
+    }
+
+    const handleBeforeInstallPrompt = (event: Event) => {
+      event.preventDefault()
+      setInstallPrompt(event as BeforeInstallPromptEvent)
+    }
+    const handleAppInstalled = () => {
+      setInstallPrompt(null)
+      showToast('已安裝到裝置。', 'success')
+    }
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
+    window.addEventListener('appinstalled', handleAppInstalled)
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
+      window.removeEventListener('appinstalled', handleAppInstalled)
+    }
+  }, [showToast])
 
   const onDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
@@ -438,9 +585,24 @@ function HomeContent() {
     showToast(`已將 ${item.name} 複製到 ${targetDay.title}。`, 'success')
   }
 
+  const openNavigation = () => {
+    if (itinerary.length === 0) return
+    const waypoints = itinerary.slice(0, -1).map(i => encodeURIComponent(i.address || i.name)).join('|')
+    const destination = encodeURIComponent(itinerary[itinerary.length - 1].address || itinerary[itinerary.length - 1].name)
+    window.open(`https://www.google.com/maps/dir/?api=1&waypoints=${waypoints}&destination=${destination}`, '_blank')
+  }
+
+  const installPwa = async () => {
+    if (!installPrompt) return
+    await installPrompt.prompt()
+    const choice = await installPrompt.userChoice
+    setInstallPrompt(null)
+    showToast(choice.outcome === 'accepted' ? '正在安裝 Travel Architect。' : '已取消安裝。', choice.outcome === 'accepted' ? 'success' : 'info')
+  }
+
   return (
     <LoadScript googleMapsApiKey={apiKey} libraries={['places']}>
-      <div className="main-layout">
+      <div className={`main-layout mobile-view-${mobileView}`}>
         <div className="toast-stack" aria-live="polite">
           {toasts.map(toast => (
             <div key={toast.id} className={`toast toast-${toast.type}`}>{toast.message}</div>
@@ -451,26 +613,64 @@ function HomeContent() {
             Google Maps API Key 尚未設定，請在 `.env.local` 加入 `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`。
           </div>
         )}
+        {showExportDialog && (
+          <div className="modal-backdrop" role="presentation" onClick={() => setShowExportDialog(false)}>
+            <section className="export-dialog" role="dialog" aria-modal="true" aria-labelledby="export-title" onClick={(e) => e.stopPropagation()}>
+              <div className="export-dialog-header">
+                <div>
+                  <h2 id="export-title">匯出行程</h2>
+                  <p>選擇單日或全部天數，再輸出成需要的格式。</p>
+                </div>
+                <button className="dialog-close" onClick={() => setShowExportDialog(false)}>×</button>
+              </div>
+              <div className="export-scope">
+                <button className={exportScope === 'active' ? 'active' : ''} onClick={() => setExportScope('active')}>目前 Day</button>
+                <button className={exportScope === 'all' ? 'active' : ''} onClick={() => setExportScope('all')}>全部天數</button>
+              </div>
+              <div className="export-actions">
+                <button onClick={copyTextSummary}>複製文字摘要</button>
+                <button onClick={exportCsv}>匯出 CSV</button>
+                <button onClick={exportPdf}>列印 / PDF</button>
+                <button onClick={exportPoster}>海報 PNG</button>
+              </div>
+            </section>
+          </div>
+        )}
         <aside className="sidebar">
           <header className="header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div><h1>Travel <br />Architect</h1><p>您的專屬旅遊建築師。</p></div>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <button className="btn-outline" onClick={async () => { if (!posterRef.current) return; setLoading(true); try { const canvas = await html2canvas(posterRef.current, { useCORS: true, backgroundColor: '#0a0a0c' }); const link = document.createElement('a'); link.download = `TravelPlan.png`; link.href = canvas.toDataURL(); link.click(); showToast('海報已匯出。', 'success') } catch (e) { showToast('海報匯出失敗，請稍後再試。', 'error') } finally { setLoading(false) } }}><IconImage /></button>
+              {installPrompt && <button className="btn-outline install-button" onClick={installPwa}>安裝</button>}
+              <button className="btn-outline export-button" onClick={() => setShowExportDialog(true)}>匯出</button>
               <button className="btn-outline" onClick={async () => { const link = generateShareLink(); if (!link) { showToast('分享連結產生失敗。', 'error'); return } try { await navigator.clipboard.writeText(link); showToast('分享連結已複製。', 'success') } catch (e) { showToast('無法複製到剪貼簿，請檢查瀏覽器權限。', 'error') } }}><IconShare /></button>
             </div>
           </header>
           <div className="search-container"><Autocomplete onLoad={setAutocomplete} onPlaceChanged={onPlaceChanged}><input type="text" className="search-input" placeholder="您想去哪裡？" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} /></Autocomplete></div>
           <div className="transport-selector">{['DRIVING', 'WALKING', 'TRANSIT'].map(m => (<button key={m} className={`day-tab-btn ${travelMode === m ? 'active' : ''}`} onClick={() => setTravelMode(m)}>{m === 'DRIVING' ? <IconCar /> : m === 'WALKING' ? <IconWalk /> : <IconTrain />} {m === 'DRIVING' ? '開車' : m === 'WALKING' ? '走路' : '大眾運輸'}</button>))}</div>
           <div className="discovery-section"><div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', color: 'var(--accent)' }}><IconSparkles /> <h2 style={{ fontSize: '1rem', fontWeight: '800', textTransform: 'uppercase' }}>探索周邊</h2></div><div style={{ display: 'flex', gap: '4px', marginBottom: '16px' }}>{['tourist_attraction', 'restaurant', 'lodging'].map(c => <button key={c} className={`day-tab-btn ${discoveryCategory === c ? 'active' : ''}`} onClick={() => setDiscoveryCategory(c)} style={{ fontSize: '0.7rem' }}>{c==='tourist_attraction'?'景點':c==='restaurant'?'美食':'住宿'}</button>)}</div><div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '8px', scrollbarWidth: 'none' }}>{discoveryLoading ? <div style={{ color: 'var(--text-dim)', fontSize: '0.8rem' }}>探索中...</div> : discoveryResults.map(res => (<div key={res.id} onClick={async () => { setLoading(true); const details = await fetchDetails(res.id, res.lat, res.lng); const updated = [...itinerary, { ...res, ...details }]; updateActiveDayItems(updated); calculateRoute(updated); setLoading(false) }} style={{ width: '120px', flexShrink: 0, cursor: 'pointer' }}><div style={{ width: '120px', height: '80px', borderRadius: '12px', overflow: 'hidden', marginBottom: '8px', background: 'var(--glass-surface)', border: '1px solid var(--glass-border)' }}>{res.photoUrl ? <img src={res.photoUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', color: 'var(--text-dim)' }}>無照片</div>}</div><div style={{ fontSize: '0.75rem', fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{res.name}</div><div style={{ fontSize: '0.65rem', color: '#f59e0b' }}>★ {res.rating || 'N/A'}</div></div>))}</div></div>
-          <div className="day-tabs">{days.map(d => (<button key={d.id} className={`day-tab-btn ${activeDayId === d.id ? 'active' : ''}`} onClick={() => { setActiveDayId(d.id); setDirections(null) }}>{d.title}</button>))}<button className="day-tab-btn" onClick={addDay}>+ Add</button></div>
+          <div className="day-tabs">{days.map(d => (<button key={d.id} className={`day-tab-btn ${activeDayId === d.id ? 'active' : ''}`} onClick={() => { setActiveDayId(d.id); calculateRoute(d.items) }}>{d.title}</button>))}<button className="day-tab-btn" onClick={addDay}>+ Add</button></div>
           <div className="day-editor">
             <input aria-label="Day 名稱" value={activeDay.title} onChange={(e) => updateActiveDay({ title: e.target.value })} />
             <button className="btn-outline" onClick={duplicateActiveDay} disabled={loading}>複製 Day</button>
             <button className="btn-outline" onClick={deleteActiveDay} disabled={loading}>{days.length === 1 ? '清空 Day' : '刪除 Day'}</button>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px', padding: '16px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid var(--glass-border)' }}><span style={{ fontSize: '0.85rem', fontWeight: '600' }}>今日出發時間:</span><input type="time" value={activeDay.startTime || '09:00'} onChange={(e) => updateActiveDay({ startTime: e.target.value })} style={{ background: 'transparent', color: '#fff', border: 'none', fontSize: '1rem', fontWeight: '800', cursor: 'pointer' }} /></div>
+          <textarea className="day-notes" placeholder="今日備註，例如集合資訊、訂位、攜帶物品..." value={activeDay.notes || ''} onChange={(e) => updateActiveDay({ notes: e.target.value })} rows={2} />
+          <div className="summary-panel">
+            <div className="summary-grid">
+              <div><span>預估結束</span><strong>{itinerarySummary.endTime}</strong></div>
+              <div><span>景點</span><strong>{itinerary.length}</strong></div>
+              <div><span>停留</span><strong>{formatMinutes(itinerarySummary.totalStay)}</strong></div>
+              <div><span>交通</span><strong>{formatMinutes(itinerarySummary.totalTravel)}</strong></div>
+            </div>
+            {itinerarySummary.warnings.length > 0 && (
+              <div className="summary-warnings">
+                {itinerarySummary.warnings.map(warning => <div key={warning}>{warning}</div>)}
+              </div>
+            )}
+          </div>
           <div className="itinerary-scroll-area">{itinerary.length === 0 ? <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.3)' }}>暫無行程</div> : (<DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}><SortableContext items={itinerary.map(i => i.id)} strategy={verticalListSortingStrategy}>{itinerary.map((item, idx) => (<SortableItem key={item.id} item={item} days={days} activeDayId={activeDayId} onUpdate={handleUpdateItem} onMoveToDay={moveItemToDay} onCopyToDay={copyItemToDay} onDelete={(id) => { const updated = itinerary.filter(i => i.id !== id); updateActiveDayItems(updated); calculateRoute(updated); }} onPeek={(lat, lng) => { setStreetViewPos({lat, lng}); setShowStreetView(true); }} startTime={schedule[idx]?.start} endTime={schedule[idx]?.end} />))}</SortableContext></DndContext>)}</div>
-          <div className="action-bar">{days.some(day => day.items.length > 0) && <button className="btn-outline" onClick={clearAllPlans} disabled={loading} style={{ flex: 1 }}><IconTrash /> 清空</button>}{itinerary.length >= 3 && <button className="btn-outline" onClick={optimize} disabled={loading} style={{ flex: 1 }}><IconMagic /> 智慧排序</button>}{itinerary.length > 0 && <button className="btn-primary" onClick={() => { const wp = itinerary.slice(0, -1).map(i => encodeURIComponent(i.address)).join('|'), dest = encodeURIComponent(itinerary[itinerary.length - 1].address); window.open(`https://www.google.com/maps/dir/?api=1&waypoints=${wp}&destination=${dest}`, '_blank') }} style={{ flex: 2 }}><IconNavigation /> 開始導航</button>}</div>
+          <div className="action-bar">{days.some(day => day.items.length > 0) && <button className="btn-outline" onClick={clearAllPlans} disabled={loading} style={{ flex: 1 }}><IconTrash /> 清空</button>}{itinerary.length >= 3 && <button className="btn-outline" onClick={optimize} disabled={loading} style={{ flex: 1 }}><IconMagic /> 智慧排序</button>}{itinerary.length > 0 && <button className="btn-primary" onClick={openNavigation} style={{ flex: 2 }}><IconNavigation /> 開始導航</button>}</div>
         </aside>
         <section className="map-viewport">
           <GoogleMap
@@ -484,6 +684,11 @@ function HomeContent() {
           </GoogleMap>
         </section>
         <div style={{ position: 'absolute', left: '-9999px', top: 0 }}><div ref={posterRef} style={{ width: '500px', padding: '40px', background: '#0a0a0c', color: '#fff', fontFamily: 'var(--font-body)' }}><h1 style={{ fontFamily: 'var(--font-display)', fontSize: '3rem', marginBottom: '8px' }}>Travel Plan</h1><p style={{ color: 'rgba(255,255,255,0.5)', marginBottom: '40px' }}>{activeDay.title} · Crafted by Travel Architect</p>{itinerary.map((item, idx) => (<div key={item.id} style={{ marginBottom: '24px', display: 'flex', gap: '20px', alignItems: 'center' }}><div style={{ width: '80px', height: '80px', borderRadius: '12px', overflow: 'hidden' }}>{item.photoUrl && <img src={item.photoUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}</div><div><div style={{ fontSize: '0.8rem', fontWeight: '800', color: '#3b82f6' }}>{schedule[idx]?.start} - {schedule[idx]?.end}</div><h3 style={{ fontSize: '1.2rem', margin: '4px 0' }}>{item.name}</h3><p style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)' }}>{item.address}</p></div></div>))}</div></div>
+        <nav className="mobile-switcher" aria-label="手機版檢視切換">
+          <button className={mobileView === 'plan' ? 'active' : ''} onClick={() => setMobileView('plan')}>行程</button>
+          <button className={mobileView === 'map' ? 'active' : ''} onClick={() => setMobileView('map')}>地圖</button>
+          <button onClick={openNavigation} disabled={itinerary.length === 0}><IconNavigation /> 導航</button>
+        </nav>
       </div>
     </LoadScript>
   )
