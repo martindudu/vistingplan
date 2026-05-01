@@ -29,7 +29,7 @@
 
 ### 本地開發
 1. **安裝依賴**：`npm install`
-2. **設定環境變數**：建立 `.env.local` 並填入 `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`。
+2. **設定環境變數**：建立 `.env.local` 並填入 `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`；若要啟用 AI 規劃，另外加入 `OPENAI_API_KEY`。
 3. **啟動**：`npm run dev`
 
 ### 部署到 Vercel

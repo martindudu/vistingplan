@@ -35,12 +35,14 @@ https://vistingplan.vercel.app/*
 ### 本地開發 (.env.local)
 ```env
 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=您的_API_Key
+OPENAI_API_KEY=您的_OpenAI_API_Key
 ```
 
 ### Vercel 部署
 1. 前往 Vercel Dashboard -> 您的專案 -> Settings -> **Environment Variables**
-2. 新增 `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` 並填入您的 Key。
-3. 重新部署專案以生效。
+2. 新增 `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` 並填入您的 Google Key。
+3. 若要啟用 AI 智慧規劃，新增 `OPENAI_API_KEY`；可選填 `OPENAI_MODEL`，預設為 `gpt-4.1-mini`。
+4. 重新部署專案以生效。
 
 ## ✅ 驗證功能
 - **氣溫顯示**：若景點旁沒出現溫度，請檢查網路連線。

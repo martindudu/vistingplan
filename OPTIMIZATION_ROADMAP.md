@@ -4,7 +4,7 @@
 
 ## 最新進度摘要
 
-目前已完成 Phase 1、Phase 2、Phase 3、Phase 4、Phase 5、Phase 6、Phase 9。
+目前已完成 Phase 1、Phase 2、Phase 3、Phase 4、Phase 5、Phase 6、Phase 7、Phase 9。
 
 ### 已完成重點
 
@@ -36,7 +36,6 @@
 
 ### 目前未完成但優先度高
 
-- Phase 7：AI 智慧規劃
 - Phase 8：協作與雲端同步
 
 ### 驗證狀態
@@ -67,7 +66,7 @@
 - 大部分功能集中在單一 `app/page.tsx`，後續維護成本會上升
 - API 錯誤提示已有基礎，但載入狀態與空狀態仍可再細緻化
 - 手機版已具備行程/地圖切換，但 PWA 與離線能力尚未補齊
-- 缺少 AI 自動規劃、協作同步等進階能力
+- 缺少協作同步等進階能力
 
 ## Phase 1：基礎穩定與資料保存（已完成）
 
@@ -352,34 +351,51 @@
 
 - 無
 
-## Phase 7：AI 智慧規劃
+## Phase 7：AI 智慧規劃（已完成）
 
 目標：讓使用者從空白開始時，也能快速產生可編輯的初版行程。
 
 ### 建議功能
 
-- AI 一鍵產生多日行程
-- 根據旅遊風格調整行程，例如親子、慢遊、美食、攝影、購物
-- 根據預算產生建議
-- 根據住宿位置安排每日路線
-- 自動判斷景點順序
-- 自動補上用餐、休息、交通時間
-- AI 重新安排某一天
-- AI 解釋為什麼這樣排
+- AI 一鍵產生多日行程（本階段實作）
+- 根據旅遊風格調整行程，例如親子、慢遊、美食、攝影、購物（本階段實作）
+- 根據預算產生建議（本階段實作）
+- 根據住宿位置安排每日路線（本階段實作）
+- 自動判斷景點順序（本階段實作）
+- 自動補上用餐、休息、交通時間（本階段實作）
+- AI 重新安排某一天（本階段實作）
+- AI 解釋為什麼這樣排（本階段實作）
 
 ### 技術調整
 
-- 建立 API route 處理 AI 請求，避免 key 暴露在前端
-- 建立 `components/AiPlannerDialog.tsx`
-- 建立 itinerary JSON schema
-- 將 AI 回傳結果轉換成目前的 `DayPlan`
-- 加入結果驗證與錯誤修復
+- 建立 API route 處理 AI 請求，避免 key 暴露在前端（本階段實作）
+- 建立 `components/AiPlannerDialog.tsx`（本階段實作）
+- 建立 itinerary JSON schema（本階段實作）
+- 將 AI 回傳結果轉換成目前的 `DayPlan`（本階段實作）
+- 加入結果驗證與錯誤修復（本階段實作）
 
 ### 驗收標準
 
 - 使用者輸入目的地、天數、偏好後可產生初版行程
 - AI 產生的結果可以直接被地圖與時間軸使用
 - 使用者可以局部重排某一天，而不是整份行程重來
+
+### 完成紀錄
+
+- 已建立 `app/api/ai-plan/route.ts`，由 server-side 使用 `OPENAI_API_KEY` 呼叫 OpenAI Responses API，避免前端暴露 key
+- 已建立 `components/AiPlannerDialog.tsx`，提供目的地、天數、日期、旅遊風格、預算、住宿與補充需求輸入
+- 已建立 `utils/aiPlanner.ts`，集中 AI request/response 型別、JSON schema、fallback plan 與結果 normalize
+- 已支援「產生新行程」與「重排目前 Day」兩種模式
+- AI 回傳項目會透過 Google Geocoder 補座標，轉成現有 `DayPlan` / `ItineraryItem` 後直接進入地圖與時間軸
+- 已支援 AI 解釋文字顯示於行程面板
+- 未設定 `OPENAI_API_KEY` 時會回傳可編輯 fallback 初版行程，方便本機開發與展示
+- 已新增 `tests/aiPlanner.test.ts`
+- 已更新 README 與 API key 設定文件，補上 `OPENAI_API_KEY` 說明
+- 已執行靜態差異檢查；目前 shell 找不到 `node` / `npm`，`tsc` 也因缺少 `node` 無法啟動，尚無法執行 Next.js 建置與測試
+
+### 尚未完成項目
+
+- 無
 
 ## Phase 8：協作與雲端同步
 
@@ -499,13 +515,12 @@ types/
 
 ## 建議開發順序
 
-目前 Phase 1、Phase 2、Phase 3、Phase 4、Phase 5、Phase 6、Phase 9 已完成。後續建議順序如下：
+目前 Phase 1、Phase 2、Phase 3、Phase 4、Phase 5、Phase 6、Phase 7、Phase 9 已完成。後續建議順序如下：
 
-1. Phase 7：AI 智慧規劃
-2. Phase 8：協作與雲端同步
-3. 補可執行 CI：安裝 Node 後跑 Next build 與測試
+1. Phase 8：協作與雲端同步
+2. 補可執行 CI：安裝 Node 後跑 Next build 與測試
 
-若以長期產品化為目標，建議下一輪先補可執行 CI，再進入 Phase 7 的 AI 產生行程。
+若以長期產品化為目標，建議下一輪先補可執行 CI，再進入 Phase 8 的雲端同步與協作。
 
 ## 第一輪最推薦實作範圍
 

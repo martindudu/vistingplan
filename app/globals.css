@@ -159,6 +159,15 @@ body::after {
   padding: 22px;
 }
 
+.ai-dialog {
+  width: min(620px, 100%);
+  border: 1px solid var(--glass-border);
+  border-radius: 18px;
+  background: rgba(10, 10, 12, 0.94);
+  box-shadow: var(--glass-shadow);
+  padding: 22px;
+}
+
 .export-dialog-header {
   display: flex;
   justify-content: space-between;
@@ -256,6 +265,82 @@ body::after {
 
 .poster-template-selector option {
   color: #000;
+}
+
+.ai-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.ai-form-grid label {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.ai-form-grid .wide {
+  grid-column: 1 / -1;
+}
+
+.ai-form-grid span {
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.ai-form-grid input,
+.ai-form-grid select,
+.ai-form-grid textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--glass-border);
+  border-radius: 9px;
+  background: rgba(255,255,255,0.04);
+  color: #fff;
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  padding: 10px 11px;
+}
+
+.ai-form-grid option {
+  color: #000;
+}
+
+.ai-form-grid textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.ai-mode-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 6px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.04);
+  margin-bottom: 14px;
+}
+
+.ai-mode-switch button {
+  border: none;
+  border-radius: 10px;
+  padding: 11px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-weight: 800;
+}
+
+.ai-mode-switch button.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.ai-submit {
+  width: 100%;
 }
 
 .overview-list {
@@ -908,6 +993,28 @@ body::after {
   grid-column: 1 / -1;
 }
 
+.ai-explanation {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 1px solid rgba(59, 130, 246, 0.24);
+  border-radius: 12px;
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.ai-explanation strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #bfdbfe;
+  font-size: 0.8rem;
+}
+
+.ai-explanation p {
+  margin: 0;
+  color: rgba(255,255,255,0.72);
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1315,6 +1422,13 @@ body::after {
     max-height: calc(100dvh - 104px);
   }
 
+  .ai-dialog {
+    padding: 18px;
+    border-radius: 16px;
+    max-height: calc(100dvh - 104px);
+    overflow-y: auto;
+  }
+
   .export-actions {
     grid-template-columns: 1fr;
   }
@@ -1325,6 +1439,11 @@ body::after {
   }
 
   .custom-item-form {
+    grid-template-columns: 1fr;
+  }
+
+  .ai-form-grid,
+  .ai-mode-switch {
     grid-template-columns: 1fr;
   }
 

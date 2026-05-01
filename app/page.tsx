@@ -4,6 +4,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { LoadScript, Autocomplete } from '@react-google-maps/api'
 import html2canvas from 'html2canvas'
 import dynamic from 'next/dynamic'
+import AiPlannerDialog from '../components/AiPlannerDialog'
 import BookingPanel from '../components/BookingPanel'
 import BudgetPanel from '../components/BudgetPanel'
 import ExportDialog from '../components/ExportDialog'
@@ -33,6 +34,7 @@ import { createDefaultDay, defaultTripInfo, parseStoredPlan, serializePlan, STOR
 import { applyRouteTravelTimes } from '../utils/routes'
 import { buildSchedule, crossesTimeWindow, formatMinutes, getWeekdayIndex, isWithinOpeningHours, parseDur, weekdayToGoogleIndex } from '../utils/time'
 import { buildDayWarnings } from '../utils/validation'
+import type { AiPlannerRequest, AiPlannerResponse, AiPlanPlace } from '../utils/aiPlanner'
 
 type ToastType = 'success' | 'error' | 'info'
 type MobileView = 'plan' | 'map'
@@ -80,6 +82,8 @@ function HomeContent() {
   const [mobileView, setMobileView] = useState<MobileView>('plan')
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [showExportDialog, setShowExportDialog] = useState(false)
+  const [showAiPlanner, setShowAiPlanner] = useState(false)
+  const [aiExplanation, setAiExplanation] = useState('')
   const [exportScope, setExportScope] = useState<ExportScope>('all')
   const [posterTemplate, setPosterTemplate] = useState<PosterTemplate>('classic')
   const [showOverview, setShowOverview] = useState(false)
@@ -171,6 +175,80 @@ function HomeContent() {
         else resolve({ weather })
       })
     })
+  }
+
+  const geocodeAiPlace = async (place: AiPlanPlace, destination: string, fallback?: ItineraryItem): Promise<ItineraryItem> => {
+    const query = place.address || `${place.name}, ${destination}`
+    const base = {
+      id: `ai-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      type: place.type || 'place',
+      name: place.name,
+      address: query || 'AI 建議地點',
+      lat: fallback?.lat || mapCenter.lat || defaultCenter.lat,
+      lng: fallback?.lng || mapCenter.lng || defaultCenter.lng,
+      notes: place.notes,
+      stayDuration: place.stayDuration || 60,
+      cost: place.cost,
+      costCategory: place.costCategory,
+    } as ItineraryItem
+
+    if (typeof google === 'undefined') return base
+
+    return new Promise((resolve) => {
+      const geocoder = new google.maps.Geocoder()
+      geocoder.geocode({ address: query }, (results, status) => {
+        if (status === 'OK' && results?.[0]?.geometry?.location) {
+          const loc = results[0].geometry.location
+          resolve({ ...base, address: results[0].formatted_address || base.address, lat: loc.lat(), lng: loc.lng() })
+        } else {
+          resolve(base)
+        }
+      })
+    })
+  }
+
+  const generateAiPlan = async (request: AiPlannerRequest) => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/ai-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...request, currentDays: days, activeDayId }),
+      })
+      if (!res.ok) throw new Error('AI planner failed')
+      const plan = await res.json() as AiPlannerResponse
+      const generatedDays = await Promise.all(plan.days.map(async (day, dayIndex) => {
+        const items: ItineraryItem[] = []
+        for (const place of day.items) {
+          items.push(await geocodeAiPlace(place, request.destination, items[items.length - 1] || itinerary[itinerary.length - 1]))
+        }
+        return {
+          id: request.mode === 'active-day' && dayIndex === 0 ? activeDayId : `ai-day-${Date.now()}-${dayIndex}`,
+          title: day.title || `Day ${dayIndex + 1}`,
+          date: day.date,
+          startTime: day.startTime || '09:00',
+          notes: day.notes,
+          items,
+        }
+      }))
+
+      if (request.mode === 'active-day') {
+        const nextDay = { ...activeDay, ...generatedDays[0], id: activeDayId }
+        setDays(prev => prev.map(day => day.id === activeDayId ? nextDay : day))
+        calculateRoute(nextDay.items, travelMode, activeDayId)
+      } else {
+        setDays(generatedDays)
+        setActiveDayId(generatedDays[0].id)
+        calculateRoute(generatedDays[0].items, travelMode, generatedDays[0].id)
+      }
+      setAiExplanation(plan.explanation)
+      setShowAiPlanner(false)
+      showToast('AI 行程已產生，可直接編輯。', 'success')
+    } catch (error) {
+      showToast('AI 行程產生失敗，請稍後再試。', 'error')
+    } finally {
+      setLoading(false)
+    }
   }
 
   const searchNearby = useCallback(async (location?: { lat: number, lng: number }) => {
@@ -648,6 +726,14 @@ function HomeContent() {
             onExportPoster={exportPoster}
           />
         )}
+        {showAiPlanner && (
+          <AiPlannerDialog
+            defaultStartDate={activeDay.date || ''}
+            defaultAccommodation={tripInfo.booking.accommodationAddress || tripInfo.booking.accommodation || ''}
+            onClose={() => setShowAiPlanner(false)}
+            onGenerate={generateAiPlan}
+          />
+        )}
         {showOverview && (
           <div className="modal-backdrop" role="presentation" onClick={() => setShowOverview(false)}>
             <section className="overview-dialog" role="dialog" aria-modal="true" aria-labelledby="overview-title" onClick={(e) => e.stopPropagation()}>
@@ -696,6 +782,7 @@ function HomeContent() {
             <div><h1>Travel <br />Architect</h1><p>您的專屬旅遊建築師。</p></div>
             <div style={{ display: 'flex', gap: '8px' }}>
               {installPrompt && <button className="btn-outline install-button" onClick={installPwa}>安裝</button>}
+              <button className="btn-outline export-button" onClick={() => setShowAiPlanner(true)}>AI</button>
               <button className="btn-outline export-button" onClick={() => setShowExportDialog(true)}>匯出</button>
               <button className="btn-outline" onClick={async () => { const link = await generateShareLink(); if (!link) { showToast('分享連結產生失敗。', 'error'); return } try { await navigator.clipboard.writeText(link); showToast('壓縮分享連結已複製。', 'success') } catch (e) { showToast('無法複製到剪貼簿，請檢查瀏覽器權限。', 'error') } }}><IconShare /></button>
             </div>
@@ -755,6 +842,7 @@ function HomeContent() {
           </div>
           <BudgetPanel days={days} activeDayId={activeDayId} tripInfo={tripInfo} onTripInfoChange={updateTripInfo} />
           <BookingPanel booking={tripInfo.booking} onChange={(booking) => updateTripInfo({ booking })} />
+          {aiExplanation && <div className="ai-explanation"><strong>AI 說明</strong><p>{aiExplanation}</p></div>}
           <div className="itinerary-scroll-area">{itinerary.length === 0 ? <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.3)' }}>暫無行程</div> : (<DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}><SortableContext items={itinerary.map(i => i.id)} strategy={verticalListSortingStrategy}>{itinerary.map((item, idx) => (<ItineraryCard key={item.id} item={item} days={days} activeDayId={activeDayId} onUpdate={handleUpdateItem} onMoveToDay={moveItemToDay} onCopyToDay={copyItemToDay} onDelete={(id) => { const updated = itinerary.filter(i => i.id !== id); updateActiveDayItems(updated); calculateRoute(updated); }} onPeek={(lat, lng) => { setStreetViewPos({lat, lng}); setShowStreetView(true); }} startTime={schedule[idx]?.start} endTime={schedule[idx]?.end} />))}</SortableContext></DndContext>)}</div>
           <div className="action-bar">{days.some(day => day.items.length > 0) && <button className="btn-outline" onClick={clearAllPlans} disabled={loading} style={{ flex: 1 }}><IconTrash /> 清空</button>}{itinerary.length >= 3 && <button className="btn-outline" onClick={optimize} disabled={loading} style={{ flex: 1 }}><IconMagic /> 智慧排序</button>}{itinerary.length > 0 && <button className="btn-primary" onClick={openNavigation} style={{ flex: 2 }}><IconNavigation /> 開始導航</button>}</div>
         </aside>
